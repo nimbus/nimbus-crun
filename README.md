@@ -58,9 +58,12 @@ bash scripts/verify-fedora-userspace.sh --crun-source /tmp/crun-src
 The GitHub Actions workflow (`.github/workflows/build.yml`) runs:
 
 1. **verify** — patch syntax, help entrypoints, patch applies to crun 1.27
-2. **build** (matrix: amd64 + arm64) — builds inside `fedora:43` containers
-   with `libkrun-devel` from repos
+2. **build** (matrix: amd64 + arm64) — builds inside a checked-in Fedora
+   builder image definition and reuses warm BuildKit `gha` cache layers so the
+   dependency install step is not re-run on every workflow
 3. **publish** — GitHub Release with checksums and attestation on `v*` tags
+
+The builder image definition lives at `.github/container/Dockerfile.builder`.
 
 ## License
 

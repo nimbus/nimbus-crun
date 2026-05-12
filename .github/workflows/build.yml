@@ -1,4 +1,4 @@
-name: Build neovex-crun
+name: Build nimbus-crun
 
 on:
   pull_request:
@@ -58,7 +58,7 @@ jobs:
         run: bash scripts/verify-patch.sh "${{ github.workspace }}/crun-${CRUN_VERSION}"
 
   build:
-    name: Build neovex-crun (linux ${{ matrix.arch }})
+    name: Build nimbus-crun (linux ${{ matrix.arch }})
     needs: verify
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
@@ -84,13 +84,13 @@ jobs:
         run: |
           {
             echo "CRUN_SOURCE_DIR=${RUNNER_TEMP}/crun-source"
-            echo "BUILD_OUTPUT_DIR=${RUNNER_TEMP}/neovex-crun-output"
-            echo "BUILD_WORK_DIR=${RUNNER_TEMP}/neovex-crun-build"
+            echo "BUILD_OUTPUT_DIR=${RUNNER_TEMP}/nimbus-crun-output"
+            echo "BUILD_WORK_DIR=${RUNNER_TEMP}/nimbus-crun-build"
           } >> "${GITHUB_ENV}"
           mkdir -p \
             "${RUNNER_TEMP}/crun-source" \
-            "${RUNNER_TEMP}/neovex-crun-output" \
-            "${RUNNER_TEMP}/neovex-crun-build"
+            "${RUNNER_TEMP}/nimbus-crun-output" \
+            "${RUNNER_TEMP}/nimbus-crun-build"
 
       - name: Clone pinned crun source with submodules
         run: |
@@ -106,7 +106,7 @@ jobs:
             FEDORA_IMAGE=${{ env.FEDORA_IMAGE }}
           platforms: ${{ matrix.platform }}
           load: true
-          tags: neovex-crun-builder:${{ matrix.arch }}
+          tags: nimbus-crun-builder:${{ matrix.arch }}
           cache-from: type=gha,scope=builder-${{ matrix.arch }}
           cache-to: type=gha,scope=builder-${{ matrix.arch }},mode=max
 
@@ -118,7 +118,7 @@ jobs:
             -v "${BUILD_OUTPUT_DIR}:/work/output" \
             -v "${BUILD_WORK_DIR}:/work/build" \
             --workdir /work/repo \
-            "neovex-crun-builder:${{ matrix.arch }}" \
+            "nimbus-crun-builder:${{ matrix.arch }}" \
             bash -lc '
               set -euo pipefail
               git config --global --add safe.directory /work/build
@@ -141,14 +141,14 @@ jobs:
 
       - name: Rename binary for release
         run: |
-          mv "${BUILD_OUTPUT_DIR}/crun" "${BUILD_OUTPUT_DIR}/neovex-crun-linux-${{ matrix.arch }}"
+          mv "${BUILD_OUTPUT_DIR}/crun" "${BUILD_OUTPUT_DIR}/nimbus-crun-linux-${{ matrix.arch }}"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v7
         with:
-          name: neovex-crun-linux-${{ matrix.arch }}
+          name: nimbus-crun-linux-${{ matrix.arch }}
           if-no-files-found: error
-          path: ${{ env.BUILD_OUTPUT_DIR }}/neovex-crun-linux-${{ matrix.arch }}
+          path: ${{ env.BUILD_OUTPUT_DIR }}/nimbus-crun-linux-${{ matrix.arch }}
 
   publish:
     name: Publish release
@@ -173,11 +173,11 @@ jobs:
           release_dir="${RUNNER_TEMP}/release"
           mkdir -p "${release_dir}"
 
-          cp "${RUNNER_TEMP}/artifacts/neovex-crun-linux-amd64/neovex-crun-linux-amd64" "${release_dir}/"
-          cp "${RUNNER_TEMP}/artifacts/neovex-crun-linux-arm64/neovex-crun-linux-arm64" "${release_dir}/"
+          cp "${RUNNER_TEMP}/artifacts/nimbus-crun-linux-amd64/nimbus-crun-linux-amd64" "${release_dir}/"
+          cp "${RUNNER_TEMP}/artifacts/nimbus-crun-linux-arm64/nimbus-crun-linux-arm64" "${release_dir}/"
 
           cd "${release_dir}"
-          sha256sum neovex-crun-linux-amd64 neovex-crun-linux-arm64 > checksums.txt
+          sha256sum nimbus-crun-linux-amd64 nimbus-crun-linux-arm64 > checksums.txt
           cat checksums.txt
 
           echo "release_dir=${release_dir}" >> "${GITHUB_OUTPUT}"
@@ -186,8 +186,8 @@ jobs:
         uses: actions/attest@v4
         with:
           subject-path: |
-            ${{ steps.release-assets.outputs.release_dir }}/neovex-crun-linux-amd64
-            ${{ steps.release-assets.outputs.release_dir }}/neovex-crun-linux-arm64
+            ${{ steps.release-assets.outputs.release_dir }}/nimbus-crun-linux-amd64
+            ${{ steps.release-assets.outputs.release_dir }}/nimbus-crun-linux-arm64
             ${{ steps.release-assets.outputs.release_dir }}/checksums.txt
 
       - name: Create GitHub Release
@@ -198,7 +198,7 @@ jobs:
 
           gh release create "${{ github.ref_name }}" \
             --repo "${{ github.repository }}" \
-            --title "neovex-crun ${{ github.ref_name }}" \
+            --title "nimbus-crun ${{ github.ref_name }}" \
             --notes "$(cat <<'NOTES'
           Patched crun binary with libkrun TSI port mapping support.
 
@@ -210,10 +210,10 @@ jobs:
           **Verify:**
           ```bash
           sha256sum -c checksums.txt
-          ./neovex-crun-linux-amd64 --version  # should show +LIBKRUN
+          ./nimbus-crun-linux-amd64 --version  # should show +LIBKRUN
           ```
           NOTES
           )" \
-            "${release_dir}/neovex-crun-linux-amd64" \
-            "${release_dir}/neovex-crun-linux-arm64" \
+            "${release_dir}/nimbus-crun-linux-amd64" \
+            "${release_dir}/nimbus-crun-linux-arm64" \
             "${release_dir}/checksums.txt"

@@ -1,7 +1,7 @@
-# neovex-crun
+# nimbus-crun
 
 Patched [crun](https://github.com/containers/crun) with libkrun TSI port
-mapping support for [neovex](https://github.com/agentstation/neovex).
+mapping support for [nimbus](https://github.com/nimbus/nimbus).
 
 ## What's patched
 
@@ -18,11 +18,11 @@ Socket Impersonation) port forwarding for libkrun microVMs.
 
 | Artifact | Location |
 |----------|----------|
-| `neovex-crun-linux-amd64` | GitHub Releases (`v*` tags) |
-| `neovex-crun-linux-arm64` | GitHub Releases (`v*` tags) |
+| `nimbus-crun-linux-amd64` | GitHub Releases (`v*` tags) |
+| `nimbus-crun-linux-arm64` | GitHub Releases (`v*` tags) |
 | Build provenance | GitHub Attestations (via `actions/attest`) |
 
-Installs to `/usr/libexec/neovex/crun` — does not conflict with or replace
+Installs to `/usr/libexec/nimbus/crun` — does not conflict with or replace
 the system crun.
 
 ## Building locally
@@ -41,10 +41,10 @@ bash scripts/verify-patch.sh /tmp/crun-src
 # Build (requires libkrun-devel)
 bash scripts/build.sh \
   --source /tmp/crun-src \
-  --output /tmp/neovex-crun
+  --output /tmp/nimbus-crun
 
 # Verify
-/tmp/neovex-crun --version  # should show +LIBKRUN
+/tmp/nimbus-crun --version  # should show +LIBKRUN
 ```
 
 Or use the Fedora container helper (works on macOS via Docker Desktop):

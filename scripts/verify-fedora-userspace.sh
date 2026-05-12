@@ -3,9 +3,9 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-usage: verify-neovex-crun-fedora-userspace.sh --crun-source <path> [options]
+usage: verify-nimbus-crun-fedora-userspace.sh --crun-source <path> [options]
 
-Run the neovex crun patch + build helpers inside a disposable Fedora container
+Run the nimbus crun patch + build helpers inside a disposable Fedora container
 through Docker Desktop. This is a macOS-friendly Linux userspace validation
 lane: it proves the patch applies and the checked-in build helper can produce a
 Linux crun binary, but it does NOT prove /dev/kvm, libkrun VM boot, or host
@@ -19,12 +19,12 @@ options:
   -h, --help             Show this help
 
 examples:
-  bash scripts/verify-neovex-crun-fedora-userspace.sh \
+  bash scripts/verify-nimbus-crun-fedora-userspace.sh \
     --crun-source ~/src/github.com/containers/crun
 
-  bash scripts/verify-neovex-crun-fedora-userspace.sh \
+  bash scripts/verify-nimbus-crun-fedora-userspace.sh \
     --crun-source ~/src/github.com/containers/crun \
-    --output-dir /tmp/neovex-crun-fedora-output
+    --output-dir /tmp/nimbus-crun-fedora-output
 EOF
 }
 
@@ -108,13 +108,13 @@ require_command docker
 crun_source="$(resolve_existing_dir "${crun_source}")"
 
 if [[ -z "${output_dir}" ]]; then
-  output_dir="$(mktemp -d "${TMPDIR:-/tmp}/neovex-crun-fedora-output.XXXXXX")"
+  output_dir="$(mktemp -d "${TMPDIR:-/tmp}/nimbus-crun-fedora-output.XXXXXX")"
   cleanup_output_dir=1
 fi
 output_dir="$(resolve_dir_path "${output_dir}")"
 
 if [[ -z "${work_dir}" ]]; then
-  work_dir="$(mktemp -d "${TMPDIR:-/tmp}/neovex-crun-fedora-build.XXXXXX")"
+  work_dir="$(mktemp -d "${TMPDIR:-/tmp}/nimbus-crun-fedora-build.XXXXXX")"
   cleanup_work_dir=1
 fi
 work_dir="$(resolve_dir_path "${work_dir}")"

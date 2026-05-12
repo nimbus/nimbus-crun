@@ -3,21 +3,21 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-usage: build-neovex-crun.sh --source <path> [--output <path>] [--install-path <path>] [--sudo-install] [--build-dir <path>]
+usage: build-nimbus-crun.sh --source <path> [--output <path>] [--install-path <path>] [--sudo-install] [--build-dir <path>]
 
-Build the checked-in patched neovex crun binary from a pinned upstream crun
+Build the checked-in patched nimbus crun binary from a pinned upstream crun
 source checkout. This helper is Linux-only and preserves the original source
 checkout by building from a copied worktree.
 
 examples:
-  bash scripts/build-neovex-crun.sh \
+  bash scripts/build-nimbus-crun.sh \
     --source ~/src/github.com/containers/crun \
-    --output /tmp/neovex-crun-stage/crun
+    --output /tmp/nimbus-crun-stage/crun
 
-  bash scripts/build-neovex-crun.sh \
+  bash scripts/build-nimbus-crun.sh \
     --source ~/src/github.com/containers/crun \
-    --output /tmp/neovex-crun-stage/crun \
-    --install-path /usr/libexec/neovex/crun \
+    --output /tmp/nimbus-crun-stage/crun \
+    --install-path /usr/libexec/nimbus/crun \
     --sudo-install
 EOF
 }
@@ -32,7 +32,7 @@ require_command() {
 }
 
 source_dir=""
-output_path="${TMPDIR:-/tmp}/neovex-crun-stage/crun"
+output_path="${TMPDIR:-/tmp}/nimbus-crun-stage/crun"
 install_path=""
 build_dir=""
 sudo_install=0
@@ -77,7 +77,7 @@ if [[ -z "${source_dir}" ]]; then
 fi
 
 if [[ "$(uname -s)" != "Linux" ]]; then
-  echo "build-neovex-crun.sh requires a Linux host" >&2
+  echo "build-nimbus-crun.sh requires a Linux host" >&2
   exit 69
 fi
 
@@ -121,7 +121,7 @@ done
 
 cleanup_build_dir=0
 if [[ -z "${build_dir}" ]]; then
-  build_dir="$(mktemp -d "${TMPDIR:-/tmp}/neovex-crun-build.XXXXXX")"
+  build_dir="$(mktemp -d "${TMPDIR:-/tmp}/nimbus-crun-build.XXXXXX")"
   cleanup_build_dir=1
 fi
 

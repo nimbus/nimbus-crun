@@ -1,6 +1,6 @@
 --- a/src/libcrun/handlers/krun.c
 +++ b/src/libcrun/handlers/krun.c
-@@ -232,6 +232,51 @@
+@@ -246,6 +246,51 @@
  }
 
  static int
@@ -49,21 +49,22 @@
 +}
 +
 +static int
- libkrun_configure_vm (uint32_t ctx_id, void *handle, bool *configured, yajl_val *config_tree, libcrun_container_t *container, libcrun_error_t *err)
+ libkrun_configure_vm (uint32_t ctx_id, void *handle, struct krun_config *kconf, libcrun_container_t *container, libcrun_error_t *err)
  {
    int32_t (*krun_set_vm_config) (uint32_t ctx_id, uint8_t num_vcpus, uint32_t ram_mib);
-@@ -507,6 +552,14 @@
+@@ -510,6 +555,15 @@
          }
      }
 
 +  ret = libkrun_configure_port_map (ctx_id, handle, container, &err);
 +  if (UNLIKELY (ret))
 +    {
++      int errcode = crun_error_get_errno (&err);
 +      libcrun_error_t *tmp_err = &err;
 +      libcrun_error_write_warning_and_release (NULL, &tmp_err);
-+      error (EXIT_FAILURE, ret, "could not configure krun port map");
++      error (EXIT_FAILURE, errcode, "could not configure krun port map");
 +    }
 +
-   yajl_tree_free (config_tree);
+   yajl_tree_free (kconf->config_tree);
 
    ret = krun_start_enter (ctx_id);

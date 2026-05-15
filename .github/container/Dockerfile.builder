@@ -1,4 +1,4 @@
-ARG FEDORA_IMAGE=fedora:43
+ARG FEDORA_IMAGE=fedora:44
 FROM ${FEDORA_IMAGE}
 
 RUN dnf install -y \

@@ -13,7 +13,7 @@ runtime integration.
 
 options:
   --crun-source <path>   Upstream crun checkout on the host
-  --image <ref>          Fedora container image to use (default: fedora:43)
+  --image <ref>          Fedora container image to use (default: fedora:44)
   --output-dir <path>    Host directory for the staged crun binary
   --work-dir <path>      Host directory for the disposable build tree
   -h, --help             Show this help
@@ -63,7 +63,7 @@ resolve_dir_path() {
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 crun_source=""
-image_ref="fedora:43"
+image_ref="fedora:44"
 output_dir=""
 work_dir=""
 cleanup_output_dir=0

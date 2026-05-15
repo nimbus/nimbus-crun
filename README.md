@@ -11,8 +11,8 @@ annotation and calls `krun_set_port_map()` to configure TSI (Transparent
 Socket Impersonation) port forwarding for libkrun microVMs.
 
 **Pinned versions:**
-- crun: 1.27
-- Built with `--with-libkrun` (libkrun-devel from Fedora 43 repos)
+- crun: 1.27.1
+- Built with `--with-libkrun` (libkrun-devel from Fedora 44 repos)
 
 ## Published artifacts
 
@@ -32,7 +32,7 @@ checkout:
 
 ```bash
 # Clone crun at the pinned version
-git clone --branch 1.27 --recurse-submodules \
+git clone --branch 1.27.1 --recurse-submodules \
   https://github.com/containers/crun.git /tmp/crun-src
 
 # Verify patch applies
@@ -57,7 +57,7 @@ bash scripts/verify-fedora-userspace.sh --crun-source /tmp/crun-src
 
 The GitHub Actions workflow (`.github/workflows/build.yml`) runs:
 
-1. **verify** — patch syntax, help entrypoints, patch applies to crun 1.27
+1. **verify** — patch syntax, help entrypoints, patch applies to crun 1.27.1
 2. **build** (matrix: amd64 + arm64) — builds inside a checked-in Fedora
    builder image definition and reuses warm BuildKit `gha` cache layers so the
    dependency install step is not re-run on every workflow

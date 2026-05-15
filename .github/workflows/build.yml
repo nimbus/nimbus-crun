@@ -27,8 +27,8 @@ permissions:
   contents: read
 
 env:
-  CRUN_VERSION: "1.27"
-  FEDORA_IMAGE: "fedora:43"
+  CRUN_VERSION: "1.27.1"
+  FEDORA_IMAGE: "fedora:44"
 
 jobs:
   verify:
@@ -202,7 +202,7 @@ jobs:
             --notes "$(cat <<'NOTES'
           Patched crun binary with libkrun TSI port mapping support.
 
-          **Build:** crun 1.27 + `0001-krun-add-tsi-port-mapping-via-oci-annotation.patch`
+          **Build:** crun 1.27.1 + `0001-krun-add-tsi-port-mapping-via-oci-annotation.patch`
 
           The binary includes `+LIBKRUN` support and reads the `krun.port_map` OCI
           annotation to configure TSI port forwarding via `krun_set_port_map()`.

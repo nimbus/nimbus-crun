@@ -100,6 +100,7 @@ verify_libkrun_root() {
   fi
 
   echo "build.libkrun.root=${libkrun_root}"
+  echo "build.libkrun.include=${libkrun_root}/include"
   echo "build.libkrun.shared_object=${shared_object}"
   echo "build.libkrun.pkg_config=${pkg_config_libs}"
 }
@@ -274,6 +275,7 @@ for patch_file in "${patch_dir}"/*.patch; do
 done
 
 export LD_LIBRARY_PATH="${libkrun_root}/lib:${LD_LIBRARY_PATH:-}"
+export CPPFLAGS="-I${libkrun_root}/include ${CPPFLAGS:-}"
 export LDFLAGS="-Wl,-rpath,${runpath} ${LDFLAGS:-}"
 
 (

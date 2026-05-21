@@ -5,15 +5,16 @@ RUN dnf install -y \
       autoconf \
       automake \
       bash \
+      binutils \
       coreutils \
       findutils \
       gcc \
       git \
       libcap-devel \
-      libkrun-devel \
       libseccomp-devel \
       libtool \
       make \
+      patchelf \
       patch \
       pkgconf-pkg-config \
       python3 \

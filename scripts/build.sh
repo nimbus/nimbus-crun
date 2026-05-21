@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-usage: build-nimbus-crun.sh --source <path> [--output <path>] [--install-path <path>] [--sudo-install] [--build-dir <path>]
+usage: build-nimbus-crun.sh --source <path> --libkrun-root <path> [--output <path>] [--install-path <path>] [--sudo-install] [--build-dir <path>] [--runpath <value>]
 
 Build the checked-in patched nimbus crun binary from a pinned upstream crun
 source checkout. This helper is Linux-only and preserves the original source
@@ -12,10 +12,12 @@ checkout by building from a copied worktree.
 examples:
   bash scripts/build-nimbus-crun.sh \
     --source ~/src/github.com/containers/crun \
+    --libkrun-root /tmp/nimbus-libkrun \
     --output /tmp/nimbus-crun-stage/crun
 
   bash scripts/build-nimbus-crun.sh \
     --source ~/src/github.com/containers/crun \
+    --libkrun-root /tmp/nimbus-libkrun \
     --output /tmp/nimbus-crun-stage/crun \
     --install-path /usr/libexec/nimbus/crun \
     --sudo-install
@@ -31,16 +33,120 @@ require_command() {
   fi
 }
 
+resolve_existing_dir() {
+  local dir_path="$1"
+
+  if [[ ! -d "${dir_path}" ]]; then
+    echo "directory not found: ${dir_path}" >&2
+    exit 66
+  fi
+
+  (
+    cd "${dir_path}"
+    pwd
+  )
+}
+
+find_libkrun_shared_object() {
+  local libkrun_root="$1"
+  local candidate
+
+  for candidate in \
+    "${libkrun_root}/lib/libkrun.so.1.17.4" \
+    "${libkrun_root}/lib/libkrun.so.1" \
+    "${libkrun_root}/lib/libkrun.so"; do
+    if [[ -e "${candidate}" ]]; then
+      printf '%s\n' "${candidate}"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+verify_libkrun_root() {
+  local libkrun_root="$1"
+  local pc_file="${libkrun_root}/lib/pkgconfig/libkrun.pc"
+  local shared_object
+  local nm_output
+  local pkg_config_libs
+
+  if [[ ! -f "${pc_file}" ]]; then
+    echo "nimbus-libkrun pkg-config metadata not found: ${pc_file}" >&2
+    exit 66
+  fi
+
+  if ! shared_object="$(find_libkrun_shared_object "${libkrun_root}")"; then
+    echo "nimbus-libkrun shared object not found under: ${libkrun_root}/lib" >&2
+    exit 66
+  fi
+
+  nm_output="$(nm -D "${shared_object}")"
+  if [[ "${nm_output}" != *" krun_set_port_map_with_bind_address"* ]]; then
+    echo "nimbus-libkrun is missing krun_set_port_map_with_bind_address: ${shared_object}" >&2
+    exit 69
+  fi
+
+  export PKG_CONFIG_PATH="${libkrun_root}/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+  if ! pkg-config --exists libkrun 2>/dev/null; then
+    echo "nimbus-libkrun pkg-config metadata is not resolvable: ${pc_file}" >&2
+    exit 69
+  fi
+
+  pkg_config_libs="$(pkg-config --define-prefix --libs libkrun)"
+  if [[ " ${pkg_config_libs} " != *" -L${libkrun_root}/lib "* ]]; then
+    echo "libkrun pkg-config libs do not resolve to the nimbus-libkrun root: ${pkg_config_libs}" >&2
+    exit 69
+  fi
+
+  echo "build.libkrun.root=${libkrun_root}"
+  echo "build.libkrun.shared_object=${shared_object}"
+  echo "build.libkrun.pkg_config=${pkg_config_libs}"
+}
+
+verify_binary_linkage() {
+  local binary_path="$1"
+  local libkrun_root="$2"
+  local expected_runpath="$3"
+  local dynamic_entries
+  local ldd_output
+
+  dynamic_entries="$(readelf -d "${binary_path}")"
+
+  if [[ -n "${expected_runpath}" && "${dynamic_entries}" != *"${expected_runpath}"* ]]; then
+    echo "built crun binary is missing expected RUNPATH/RPATH: ${expected_runpath}" >&2
+    echo "${dynamic_entries}" >&2
+    exit 70
+  fi
+
+  if [[ "${dynamic_entries}" == *"Shared library: [libkrun.so.1]"* ]]; then
+    ldd_output="$(LD_LIBRARY_PATH="${libkrun_root}/lib:${LD_LIBRARY_PATH:-}" ldd "${binary_path}")"
+    echo "${ldd_output}"
+    if [[ "${ldd_output}" != *"libkrun.so.1 => ${libkrun_root}/lib/"* ]]; then
+      echo "built crun binary does not resolve libkrun from nimbus-libkrun root" >&2
+      exit 70
+    fi
+  else
+    echo "build.libkrun.linkage=dlopen"
+  fi
+}
+
 source_dir=""
+libkrun_root=""
 output_path="${TMPDIR:-/tmp}/nimbus-crun-stage/crun"
 install_path=""
 build_dir=""
 sudo_install=0
+runpath='$ORIGIN/lib'
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --source)
       source_dir="${2:-}"
+      shift 2
+      ;;
+    --libkrun-root)
+      libkrun_root="${2:-}"
       shift 2
       ;;
     --output)
@@ -53,6 +159,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --build-dir)
       build_dir="${2:-}"
+      shift 2
+      ;;
+    --runpath)
+      runpath="${2:-}"
       shift 2
       ;;
     --sudo-install)
@@ -76,6 +186,11 @@ if [[ -z "${source_dir}" ]]; then
   exit 64
 fi
 
+if [[ -z "${libkrun_root}" ]]; then
+  usage >&2
+  exit 64
+fi
+
 if [[ "$(uname -s)" != "Linux" ]]; then
   echo "build-nimbus-crun.sh requires a Linux host" >&2
   exit 69
@@ -88,6 +203,8 @@ if [[ ! -d "${source_dir}" ]]; then
   echo "upstream crun source not found: ${source_dir}" >&2
   exit 66
 fi
+source_dir="$(resolve_existing_dir "${source_dir}")"
+libkrun_root="$(resolve_existing_dir "${libkrun_root}")"
 
 if [[ ! -d "${patch_dir}" ]]; then
   echo "patch directory not found: ${patch_dir}" >&2
@@ -100,14 +217,21 @@ require_command make
 require_command autoreconf
 require_command autoconf
 require_command automake
+require_command grep
 require_command pkg-config
 require_command cp
+require_command ldd
+require_command nm
+require_command patchelf
+require_command readelf
 require_command install
 
 if ! command -v cc >/dev/null 2>&1 && ! command -v gcc >/dev/null 2>&1 && ! command -v clang >/dev/null 2>&1; then
   echo "required C compiler not found (cc, gcc, or clang)" >&2
   exit 69
 fi
+
+verify_libkrun_root "${libkrun_root}"
 
 # Dry-run all patches to verify they apply cleanly before building.
 for patch_file in "${patch_dir}"/*.patch; do
@@ -149,22 +273,8 @@ for patch_file in "${patch_dir}"/*.patch; do
   patch -d "${build_dir}" -p1 < "${patch_file}"
 done
 
-# Ensure pkg-config can find libkrun.  When libkrun is built from source it
-# installs to /usr/local/lib64/pkgconfig by default, which is not on the
-# standard pkg-config search path on Debian.
-if ! pkg-config --exists libkrun 2>/dev/null; then
-  for candidate in /usr/local/lib64/pkgconfig /usr/local/lib/pkgconfig; do
-    if [[ -f "${candidate}/libkrun.pc" ]]; then
-      export PKG_CONFIG_PATH="${candidate}:${PKG_CONFIG_PATH:-}"
-      break
-    fi
-  done
-fi
-
-if ! pkg-config --exists libkrun 2>/dev/null; then
-  echo "libkrun.pc not found by pkg-config. Install libkrun or set PKG_CONFIG_PATH." >&2
-  exit 69
-fi
+export LD_LIBRARY_PATH="${libkrun_root}/lib:${LD_LIBRARY_PATH:-}"
+export LDFLAGS="-Wl,-rpath,${runpath} ${LDFLAGS:-}"
 
 (
   cd "${build_dir}"
@@ -184,11 +294,18 @@ if [[ ! -x "${built_binary}" ]]; then
   exit 70
 fi
 
+if [[ -n "${runpath}" ]]; then
+  patchelf --set-rpath "${runpath}" "${built_binary}"
+fi
+verify_binary_linkage "${built_binary}" "${libkrun_root}" "${runpath}"
+
 mkdir -p "$(dirname "${output_path}")"
 install -m 0755 "${built_binary}" "${output_path}"
 echo "build.output=${output_path}"
 
-version_line="$("${output_path}" --version 2>/dev/null | head -n1 || true)"
+verify_binary_linkage "${output_path}" "${libkrun_root}" "${runpath}"
+
+version_line="$(LD_LIBRARY_PATH="${libkrun_root}/lib:${LD_LIBRARY_PATH:-}" "${output_path}" --version 2>/dev/null | head -n1 || true)"
 if [[ -n "${version_line}" ]]; then
   echo "build.output.version=${version_line}"
 fi
@@ -203,7 +320,9 @@ if [[ -n "${install_path}" ]]; then
   fi
   echo "build.install=${install_path}"
 
-  install_version_line="$("${install_path}" --version 2>/dev/null | head -n1 || true)"
+  verify_binary_linkage "${install_path}" "${libkrun_root}" "${runpath}"
+
+  install_version_line="$(LD_LIBRARY_PATH="${libkrun_root}/lib:${LD_LIBRARY_PATH:-}" "${install_path}" --version 2>/dev/null | head -n1 || true)"
   if [[ -n "${install_version_line}" ]]; then
     echo "build.install.version=${install_version_line}"
   fi

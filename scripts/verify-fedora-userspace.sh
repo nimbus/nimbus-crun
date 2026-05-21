@@ -3,27 +3,31 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-usage: verify-nimbus-crun-fedora-userspace.sh --crun-source <path> [options]
+usage: verify-nimbus-crun-fedora-userspace.sh --crun-source <path> --libkrun-root <path> [options]
 
 Run the nimbus crun patch + build helpers inside a disposable Fedora container
 through Docker Desktop. This is a macOS-friendly Linux userspace validation
 lane: it proves the patch applies and the checked-in build helper can produce a
-Linux crun binary, but it does NOT prove /dev/kvm, libkrun VM boot, or host
-runtime integration.
+Linux crun binary linked against the Nimbus-private libkrun root, but it does
+NOT prove /dev/kvm, libkrun VM boot, or host runtime integration.
 
 options:
   --crun-source <path>   Upstream crun checkout on the host
+  --libkrun-root <path>  Extracted nimbus-libkrun archive root on the host
   --image <ref>          Fedora container image to use (default: fedora:44)
   --output-dir <path>    Host directory for the staged crun binary
   --work-dir <path>      Host directory for the disposable build tree
+  --runpath <value>      RUNPATH embedded into crun (default: $ORIGIN/lib)
   -h, --help             Show this help
 
 examples:
   bash scripts/verify-nimbus-crun-fedora-userspace.sh \
-    --crun-source ~/src/github.com/containers/crun
+    --crun-source ~/src/github.com/containers/crun \
+    --libkrun-root /tmp/nimbus-libkrun
 
   bash scripts/verify-nimbus-crun-fedora-userspace.sh \
     --crun-source ~/src/github.com/containers/crun \
+    --libkrun-root /tmp/nimbus-libkrun \
     --output-dir /tmp/nimbus-crun-fedora-output
 EOF
 }
@@ -63,16 +67,22 @@ resolve_dir_path() {
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 crun_source=""
+libkrun_root=""
 image_ref="fedora:44"
 output_dir=""
 work_dir=""
 cleanup_output_dir=0
 cleanup_work_dir=0
+runpath='$ORIGIN/lib'
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --crun-source)
       crun_source="${2:-}"
+      shift 2
+      ;;
+    --libkrun-root)
+      libkrun_root="${2:-}"
       shift 2
       ;;
     --image)
@@ -85,6 +95,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --work-dir)
       work_dir="${2:-}"
+      shift 2
+      ;;
+    --runpath)
+      runpath="${2:-}"
       shift 2
       ;;
     -h|--help)
@@ -104,8 +118,14 @@ if [[ -z "${crun_source}" ]]; then
   exit 64
 fi
 
+if [[ -z "${libkrun_root}" ]]; then
+  usage >&2
+  exit 64
+fi
+
 require_command docker
 crun_source="$(resolve_existing_dir "${crun_source}")"
+libkrun_root="$(resolve_existing_dir "${libkrun_root}")"
 
 if [[ -z "${output_dir}" ]]; then
   output_dir="$(mktemp -d "${TMPDIR:-/tmp}/nimbus-crun-fedora-output.XXXXXX")"
@@ -136,14 +156,18 @@ staged_binary="${output_dir}/crun"
 echo "userspace.image=${image_ref}"
 echo "userspace.repo=${repo_root}"
 echo "userspace.crun_source=${crun_source}"
+echo "userspace.libkrun_root=${libkrun_root}"
 echo "userspace.output_dir=${output_dir}"
 echo "userspace.work_dir=${work_dir}"
+echo "userspace.runpath=${runpath}"
 
 docker run --rm \
   -v "${repo_root}:/work/repo:ro" \
   -v "${crun_source}:/work/crun-src:ro" \
+  -v "${libkrun_root}:/work/libkrun:ro" \
   -v "${output_dir}:${container_output_dir}" \
   -v "${work_dir}:${container_work_dir}" \
+  -e NIMBUS_CRUN_RUNPATH="${runpath}" \
   --workdir /work/repo \
   "${image_ref}" \
   bash -lc '
@@ -152,14 +176,15 @@ docker run --rm \
       autoconf \
       automake \
       bash \
+      binutils \
       coreutils \
       findutils \
       gcc \
       git \
       libcap-devel \
-      libkrun-devel \
       libseccomp-devel \
       libtool \
+      patchelf \
       patch \
       pkgconf-pkg-config \
       python3 \
@@ -169,9 +194,11 @@ docker run --rm \
     bash scripts/verify-patch.sh /work/crun-src
     bash scripts/build.sh \
       --source /work/crun-src \
+      --libkrun-root /work/libkrun \
       --output /work/output/crun \
-      --build-dir /work/build
-    /work/output/crun --version
+      --build-dir /work/build \
+      --runpath "${NIMBUS_CRUN_RUNPATH}"
+    LD_LIBRARY_PATH=/work/libkrun/lib /work/output/crun --version
   '
 
 if [[ ! -f "${staged_binary}" ]]; then

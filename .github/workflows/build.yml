@@ -31,6 +31,9 @@ permissions:
 env:
   CRUN_VERSION: "1.27.1"
   FEDORA_IMAGE: "fedora:44"
+  NIMBUS_LIBKRUN_REPO: "nimbus/nimbus-libkrun"
+  NIMBUS_LIBKRUN_VERSION: "v1.17.4-nimbus.1"
+  NIMBUS_CRUN_RUNPATH: "$ORIGIN/lib"
 
 jobs:
   verify:
@@ -89,16 +92,34 @@ jobs:
             echo "CRUN_SOURCE_DIR=${RUNNER_TEMP}/crun-source"
             echo "BUILD_OUTPUT_DIR=${RUNNER_TEMP}/nimbus-crun-output"
             echo "BUILD_WORK_DIR=${RUNNER_TEMP}/nimbus-crun-build"
+            echo "LIBKRUN_ARCHIVE_DIR=${RUNNER_TEMP}/nimbus-libkrun-release"
+            echo "LIBKRUN_ROOT=${RUNNER_TEMP}/nimbus-libkrun-root"
           } >> "${GITHUB_ENV}"
           mkdir -p \
             "${RUNNER_TEMP}/crun-source" \
             "${RUNNER_TEMP}/nimbus-crun-output" \
-            "${RUNNER_TEMP}/nimbus-crun-build"
+            "${RUNNER_TEMP}/nimbus-crun-build" \
+            "${RUNNER_TEMP}/nimbus-libkrun-release" \
+            "${RUNNER_TEMP}/nimbus-libkrun-root"
 
       - name: Clone pinned crun source with submodules
         run: |
           git clone --depth 1 --branch "${CRUN_VERSION}" --recurse-submodules \
             https://github.com/containers/crun.git "${CRUN_SOURCE_DIR}"
+
+      - name: Download paired nimbus-libkrun release
+        run: |
+          release_url="https://github.com/${NIMBUS_LIBKRUN_REPO}/releases/download/${NIMBUS_LIBKRUN_VERSION}"
+          archive_name="nimbus-libkrun-linux-${{ matrix.arch }}.tar.gz"
+
+          curl -fsSL -o "${LIBKRUN_ARCHIVE_DIR}/checksums.txt" \
+            "${release_url}/checksums.txt"
+          curl -fsSL -o "${LIBKRUN_ARCHIVE_DIR}/${archive_name}" \
+            "${release_url}/${archive_name}"
+
+          cd "${LIBKRUN_ARCHIVE_DIR}"
+          sha256sum --ignore-missing -c checksums.txt
+          tar -xzf "${archive_name}" -C "${LIBKRUN_ROOT}"
 
       - name: Build cached builder image
         uses: docker/build-push-action@v7
@@ -118,8 +139,10 @@ jobs:
           docker run --rm \
             -v "${GITHUB_WORKSPACE}:/work/repo:ro" \
             -v "${CRUN_SOURCE_DIR}:/work/crun-src:ro" \
+            -v "${LIBKRUN_ROOT}:/work/libkrun:ro" \
             -v "${BUILD_OUTPUT_DIR}:/work/output" \
             -v "${BUILD_WORK_DIR}:/work/build" \
+            -e NIMBUS_CRUN_RUNPATH="${NIMBUS_CRUN_RUNPATH}" \
             --workdir /work/repo \
             "nimbus-crun-builder:${{ matrix.arch }}" \
             bash -lc '
@@ -128,17 +151,20 @@ jobs:
               bash scripts/verify-patch.sh /work/crun-src
               bash scripts/build.sh \
                 --source /work/crun-src \
+                --libkrun-root /work/libkrun \
                 --output /work/output/crun \
-                --build-dir /work/build
+                --build-dir /work/build \
+                --runpath "${NIMBUS_CRUN_RUNPATH}"
 
               echo "--- version check ---"
-              /work/output/crun --version
+              LD_LIBRARY_PATH=/work/libkrun/lib /work/output/crun --version
 
-              version_output="$(/work/output/crun --version)"
+              version_output="$(LD_LIBRARY_PATH=/work/libkrun/lib /work/output/crun --version)"
               if [[ "${version_output}" != *"+LIBKRUN"* ]]; then
                 echo "ERROR: built crun binary does not have +LIBKRUN support" >&2
                 exit 1
               fi
+              readelf -d /work/output/crun
               echo "PASS: crun binary has +LIBKRUN support"
             '
 
@@ -205,15 +231,19 @@ jobs:
             --notes "$(cat <<'NOTES'
           Patched crun binary with libkrun TSI port mapping support.
 
-          **Build:** crun 1.27.1 + `0001-krun-add-tsi-port-mapping-via-oci-annotation.patch`
+          **Build:** crun 1.27.1 + `0001-krun-add-tsi-port-mapping-via-oci-annotation.patch`,
+          linked against `nimbus/nimbus-libkrun` v1.17.4-nimbus.1.
 
           The binary includes `+LIBKRUN` support and reads the `krun.port_map` OCI
-          annotation to configure TSI port forwarding via `krun_set_port_map()`.
+          annotation to configure TSI port forwarding via `krun_set_port_map()`
+          or `krun_set_port_map_with_bind_address()`. Its RUNPATH is `$ORIGIN/lib`
+          for the `/usr/libexec/nimbus/crun` + `/usr/libexec/nimbus/lib` install
+          layout.
 
           **Verify:**
           ```bash
           sha256sum -c checksums.txt
-          ./nimbus-crun-linux-amd64 --version  # should show +LIBKRUN
+          LD_LIBRARY_PATH=/usr/libexec/nimbus/lib /usr/libexec/nimbus/crun --version
           ```
           NOTES
           )" \

@@ -6,9 +6,16 @@ mapping support for [nimbus](https://github.com/nimbus/nimbus).
 ## What's patched
 
 A single patch (`0001-krun-add-tsi-port-mapping-via-oci-annotation.patch`)
-adds ~50 lines to crun's krun handler. It reads a `krun.port_map` OCI
-annotation and calls `krun_set_port_map()` to configure TSI (Transparent
-Socket Impersonation) port forwarding for libkrun microVMs.
+adds the Nimbus `krun.port_map` annotation path to crun's krun handler. It
+validates legacy `HOST_PORT:GUEST_PORT` entries, validates address-bearing
+`ADDR:HOST_PORT:GUEST_PORT` and `[IPv6]:HOST_PORT:GUEST_PORT` entries, and
+calls the matching libkrun TSI (Transparent Socket Impersonation) port-map
+entrypoint.
+
+Address-bearing entries fail closed unless the loaded libkrun exports
+`krun_set_port_map_with_bind_address`. That keeps localhost-intended Nimbus
+service bindings from silently widening to all host interfaces when the
+patched libkrun lane is not present.
 
 **Pinned versions:**
 - crun: 1.27.1
@@ -57,7 +64,8 @@ bash scripts/verify-fedora-userspace.sh --crun-source /tmp/crun-src
 
 The GitHub Actions workflow (`.github/workflows/build.yml`) runs:
 
-1. **verify** — patch syntax, help entrypoints, patch applies to crun 1.27.1
+1. **verify** — patch syntax, parser malformed-input coverage, help
+   entrypoints, patch applies to crun 1.27.1
 2. **build** (matrix: amd64 + arm64) — builds inside a checked-in Fedora
    builder image definition and reuses warm BuildKit `gha` cache layers so the
    dependency install step is not re-run on every workflow

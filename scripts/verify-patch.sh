@@ -23,3 +23,5 @@ fi
 
 patch --dry-run -d "${crun_source}" -p1 < "${patch_file}"
 echo "verified: ${patch_file} applies cleanly to ${crun_source}"
+
+bash "${repo_root}/scripts/verify-port-map-parser.sh"

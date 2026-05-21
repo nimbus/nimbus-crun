@@ -5,6 +5,7 @@ on:
     paths:
       - "patches/**"
       - "scripts/**"
+      - "tests/**"
       - ".github/container/**"
       - ".github/workflows/build.yml"
   push:
@@ -15,6 +16,7 @@ on:
     paths:
       - "patches/**"
       - "scripts/**"
+      - "tests/**"
       - ".github/container/**"
       - ".github/workflows/build.yml"
   workflow_dispatch:
@@ -43,6 +45,7 @@ jobs:
       - name: Verify helper script syntax and help entrypoints
         run: |
           bash -n scripts/verify-patch.sh
+          bash -n scripts/verify-port-map-parser.sh
           bash -n scripts/build.sh
           bash -n scripts/verify-fedora-userspace.sh
           bash scripts/build.sh --help

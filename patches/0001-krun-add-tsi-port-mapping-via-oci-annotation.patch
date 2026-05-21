@@ -1,47 +1,290 @@
 --- a/src/libcrun/handlers/krun.c
 +++ b/src/libcrun/handlers/krun.c
-@@ -246,6 +246,51 @@
+@@ -23,9 +23,13 @@
+ #include "../utils.h"
+ #include "../linux.h"
+ #include <unistd.h>
++#include <arpa/inet.h>
+ #include <sys/stat.h>
+ #include <sys/socket.h>
+ #include <errno.h>
++#include <limits.h>
++#include <stdint.h>
++#include <string.h>
+ #include <sys/param.h>
+ #include <sys/types.h>
+ #include <sys/sysmacros.h>
+@@ -69,6 +73,10 @@
+ #define KRUN_FLAVOR_AWS_NITRO "aws-nitro"
+ #define KRUN_FLAVOR_SEV "sev"
+ 
++#define NIMBUS_KRUN_PORT_MAP_BIND_ADDRESS_SYMBOL "krun_set_port_map_with_bind_address"
++#define NIMBUS_KRUN_PORT_MAP_MAX_ANNOTATION_LEN 8192
++#define NIMBUS_KRUN_PORT_MAP_MAX_ENTRIES 256
++
+ #define PASST_FD_PARENT 0
+ #define PASST_FD_CHILD 1
+ 
+@@ -242,9 +250,269 @@
+     }
+ 
+   return val;
++}
++
++static int
++libkrun_parse_port_map_port (const char *value, size_t len, uint16_t *port, libcrun_error_t *err)
++{
++  unsigned long parsed = 0;
++  size_t i;
++
++  if (len == 0)
++    return crun_make_error (err, 0, "krun.port_map port cannot be empty");
++
++  for (i = 0; i < len; i++)
++    {
++      if (value[i] < '0' || value[i] > '9')
++        return crun_make_error (err, 0, "krun.port_map port contains a non-decimal character");
++
++      parsed = (parsed * 10) + (unsigned long) (value[i] - '0');
++      if (parsed > UINT16_MAX)
++        return crun_make_error (err, 0, "krun.port_map port is outside the valid u16 range");
++    }
++
++  if (parsed == 0)
++    return crun_make_error (err, 0, "krun.port_map port must be greater than zero");
++
++  *port = (uint16_t) parsed;
++  return 0;
++}
++
++struct libkrun_port_map_entry
++{
++  bool has_bind_address;
++  char bind_address[INET6_ADDRSTRLEN];
++  uint16_t host_port;
++  uint16_t guest_port;
++};
++
++static int
++libkrun_parse_port_map_address (const char *value, size_t len, int family, struct libkrun_port_map_entry *parsed, libcrun_error_t *err)
++{
++  char address[INET6_ADDRSTRLEN];
++  struct in_addr ipv4;
++  struct in6_addr ipv6;
++
++  if (len == 0)
++    return crun_make_error (err, 0, "krun.port_map bind address cannot be empty");
++
++  if (len >= sizeof (address))
++    return crun_make_error (err, 0, "krun.port_map bind address is too long");
++
++  memcpy (address, value, len);
++  address[len] = '\0';
++
++  if (family == AF_INET)
++    {
++      if (inet_pton (AF_INET, address, &ipv4) != 1)
++        return crun_make_error (err, 0, "krun.port_map bind address is not a valid IPv4 address");
++    }
++  else if (family == AF_INET6)
++    {
++      if (inet_pton (AF_INET6, address, &ipv6) != 1)
++        return crun_make_error (err, 0, "krun.port_map bind address is not a valid IPv6 address");
++    }
++  else
++    return crun_make_error (err, 0, "krun.port_map bind address family is unsupported");
++
++  parsed->has_bind_address = true;
++  memcpy (parsed->bind_address, address, len + 1);
++  return 0;
  }
-
+ 
  static int
++libkrun_parse_port_map_entry (const char *entry, size_t len, struct libkrun_port_map_entry *parsed, libcrun_error_t *err)
++{
++  const char *first_separator;
++  const char *second_separator;
++  const char *closing_bracket;
++  int ret;
++
++  memset (parsed, 0, sizeof (*parsed));
++
++  if (len == 0)
++    return crun_make_error (err, 0, "krun.port_map entry cannot be empty");
++
++  if (entry[0] == '[')
++    {
++      closing_bracket = memchr (entry + 1, ']', len - 1);
++      if (closing_bracket == NULL || (size_t) (closing_bracket - entry + 2) >= len || closing_bracket[1] != ':')
++        return crun_make_error (err, 0, "krun.port_map IPv6 bind address must use [addr]:host_port:guest_port");
++
++      ret = libkrun_parse_port_map_address (entry + 1, closing_bracket - entry - 1, AF_INET6, parsed, err);
++      if (UNLIKELY (ret < 0))
++        return ret;
++
++      first_separator = closing_bracket + 1;
++      second_separator = memchr (first_separator + 1, ':', len - (first_separator - entry) - 1);
++      if (second_separator == NULL || memchr (second_separator + 1, ':', len - (second_separator - entry) - 1) != NULL)
++        return crun_make_error (err, 0, "krun.port_map IPv6 entry must be [addr]:host_port:guest_port");
++
++      ret = libkrun_parse_port_map_port (first_separator + 1, second_separator - first_separator - 1, &parsed->host_port, err);
++      if (UNLIKELY (ret < 0))
++        return ret;
++
++      return libkrun_parse_port_map_port (second_separator + 1, len - (second_separator - entry) - 1, &parsed->guest_port, err);
++    }
++
++  first_separator = memchr (entry, ':', len);
++  if (first_separator == NULL)
++    return crun_make_error (err, 0, "krun.port_map entry must be host_port:guest_port or address:host_port:guest_port");
++
++  second_separator = memchr (first_separator + 1, ':', len - (first_separator - entry) - 1);
++  if (second_separator == NULL)
++    {
++      ret = libkrun_parse_port_map_port (entry, first_separator - entry, &parsed->host_port, err);
++      if (UNLIKELY (ret < 0))
++        return ret;
++
++      return libkrun_parse_port_map_port (first_separator + 1, len - (first_separator - entry) - 1, &parsed->guest_port, err);
++    }
++
++  if (memchr (second_separator + 1, ':', len - (second_separator - entry) - 1) != NULL)
++    return crun_make_error (err, 0, "krun.port_map IPv6 bind addresses must be bracketed");
++
++  ret = libkrun_parse_port_map_address (entry, first_separator - entry, AF_INET, parsed, err);
++  if (UNLIKELY (ret < 0))
++    return ret;
++
++  ret = libkrun_parse_port_map_port (first_separator + 1, second_separator - first_separator - 1, &parsed->host_port, err);
++  if (UNLIKELY (ret < 0))
++    return ret;
++
++  return libkrun_parse_port_map_port (second_separator + 1, len - (second_separator - entry) - 1, &parsed->guest_port, err);
++}
++
++static int
++libkrun_reject_duplicate_port_map_entry (const struct libkrun_port_map_entry *entries, size_t entries_len, const struct libkrun_port_map_entry *candidate, libcrun_error_t *err)
++{
++  size_t i;
++
++  for (i = 0; i < entries_len; i++)
++    if (entries[i].host_port == candidate->host_port
++        && entries[i].has_bind_address == candidate->has_bind_address
++        && strcmp (entries[i].bind_address, candidate->bind_address) == 0)
++      return crun_make_error (err, 0, "krun.port_map contains a duplicate host bind address and port");
++
++  return 0;
++}
++
++static int
++libkrun_validate_port_map_annotation (const char *annotation, size_t *entries_len, bool *requires_bind_address, libcrun_error_t *err)
++{
++  cleanup_free struct libkrun_port_map_entry *entries = NULL;
++  size_t annotation_len;
++  size_t offset = 0;
++  int ret;
++
++  *entries_len = 0;
++  *requires_bind_address = false;
++
++  annotation_len = strlen (annotation);
++  if (annotation_len == 0)
++    return crun_make_error (err, 0, "krun.port_map annotation cannot be empty");
++
++  if (annotation_len > NIMBUS_KRUN_PORT_MAP_MAX_ANNOTATION_LEN)
++    return crun_make_error (err, 0, "krun.port_map annotation is too long");
++
++  entries = xmalloc0 (sizeof (*entries) * NIMBUS_KRUN_PORT_MAP_MAX_ENTRIES);
++
++  while (offset < annotation_len)
++    {
++      struct libkrun_port_map_entry parsed;
++      const char *entry = annotation + offset;
++      const char *comma = memchr (entry, ',', annotation_len - offset);
++      size_t entry_len = comma != NULL ? (size_t) (comma - entry) : annotation_len - offset;
++
++      if (entry_len == 0)
++        return crun_make_error (err, 0, "krun.port_map entry cannot be empty");
++
++      if (*entries_len == NIMBUS_KRUN_PORT_MAP_MAX_ENTRIES)
++        return crun_make_error (err, 0, "krun.port_map contains too many entries");
++
++      ret = libkrun_parse_port_map_entry (entry, entry_len, &parsed, err);
++      if (UNLIKELY (ret < 0))
++        return ret;
++
++      ret = libkrun_reject_duplicate_port_map_entry (entries, *entries_len, &parsed, err);
++      if (UNLIKELY (ret < 0))
++        return ret;
++
++      if (parsed.has_bind_address)
++        *requires_bind_address = true;
++
++      entries[*entries_len] = parsed;
++      *entries_len = *entries_len + 1;
++
++      if (comma == NULL)
++        break;
++
++      offset = (comma - annotation) + 1;
++      if (offset == annotation_len)
++        return crun_make_error (err, 0, "krun.port_map entry cannot be empty");
++    }
++
++  return 0;
++}
++
++static int
 +libkrun_configure_port_map (uint32_t ctx_id, void *handle, libcrun_container_t *container, libcrun_error_t *err)
 +{
 +  int32_t (*krun_set_port_map) (uint32_t ctx_id, const char *const port_map[]);
++  int32_t (*krun_set_port_map_with_bind_address) (uint32_t ctx_id, const char *const port_map[]);
 +  const char *annotation;
 +  cleanup_free char *port_map = NULL;
 +  cleanup_free char **entries = NULL;
 +  char *entry;
 +  char *saveptr = NULL;
 +  size_t entries_len = 0;
++  size_t validated_entries_len = 0;
++  bool requires_bind_address = false;
 +  int ret;
 +
 +  annotation = find_annotation (container, "krun.port_map");
-+  if (annotation == NULL || *annotation == '\0')
++  if (annotation == NULL)
 +    return 0;
 +
-+  krun_set_port_map = dlsym (handle, "krun_set_port_map");
-+  if (krun_set_port_map == NULL)
-+    return crun_make_error (err, 0, "could not find symbol in the krun library");
++  ret = libkrun_validate_port_map_annotation (annotation, &validated_entries_len, &requires_bind_address, err);
++  if (UNLIKELY (ret < 0))
++    return ret;
 +
 +  port_map = xstrdup (annotation);
-+  for (entry = strtok_r (port_map, ",", &saveptr); entry != NULL;
-+       entry = strtok_r (NULL, ",", &saveptr))
-+    entries_len++;
++  entries = xmalloc0 (sizeof (*entries) * (validated_entries_len + 1));
 +
-+  if (entries_len == 0)
-+    return 0;
-+
-+  free (port_map);
-+  port_map = xstrdup (annotation);
-+  entries = xmalloc0 (sizeof (*entries) * (entries_len + 1));
-+
-+  saveptr = NULL;
-+  entries_len = 0;
 +  for (entry = strtok_r (port_map, ",", &saveptr); entry != NULL;
 +       entry = strtok_r (NULL, ",", &saveptr))
 +    entries[entries_len++] = entry;
 +
-+  ret = krun_set_port_map (ctx_id, (const char *const *) entries);
++  if (entries_len != validated_entries_len)
++    return crun_make_error (err, 0, "validated krun.port_map entry count changed during tokenization");
++
++  if (requires_bind_address)
++    {
++      krun_set_port_map_with_bind_address = dlsym (handle, NIMBUS_KRUN_PORT_MAP_BIND_ADDRESS_SYMBOL);
++      if (krun_set_port_map_with_bind_address == NULL)
++        return crun_make_error (err, 0, "krun.port_map entries with bind addresses require libkrun symbol %s",
++                                NIMBUS_KRUN_PORT_MAP_BIND_ADDRESS_SYMBOL);
++
++      ret = krun_set_port_map_with_bind_address (ctx_id, (const char *const *) entries);
++    }
++  else
++    {
++      krun_set_port_map = dlsym (handle, "krun_set_port_map");
++      if (krun_set_port_map == NULL)
++        return crun_make_error (err, 0, "could not find symbol in the krun library");
++
++      ret = krun_set_port_map (ctx_id, (const char *const *) entries);
++    }
++
 +  if (UNLIKELY (ret < 0))
 +    return crun_make_error (err, -ret, "could not set krun port map");
 +
@@ -51,11 +294,13 @@
 +static int
  libkrun_configure_vm (uint32_t ctx_id, void *handle, struct krun_config *kconf, libcrun_container_t *container, libcrun_error_t *err)
  {
-   int32_t (*krun_set_vm_config) (uint32_t ctx_id, uint8_t num_vcpus, uint32_t ram_mib);
-@@ -510,6 +555,15 @@
-         }
-     }
-
+   runtime_spec_schema_config_schema *def = container->container_def;
+@@ -506,6 +774,15 @@
+       libcrun_error_t *tmp_err = &err;
+       libcrun_error_write_warning_and_release (NULL, &tmp_err);
+       error (EXIT_FAILURE, errcode, "could not configure krun vm");
++    }
++
 +  ret = libkrun_configure_port_map (ctx_id, handle, container, &err);
 +  if (UNLIKELY (ret))
 +    {
@@ -63,8 +308,6 @@
 +      libcrun_error_t *tmp_err = &err;
 +      libcrun_error_write_warning_and_release (NULL, &tmp_err);
 +      error (EXIT_FAILURE, errcode, "could not configure krun port map");
-+    }
-+
+     }
+ 
    yajl_tree_free (kconf->config_tree);
-
-   ret = krun_start_enter (ctx_id);

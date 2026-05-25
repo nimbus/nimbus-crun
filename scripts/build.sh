@@ -52,7 +52,7 @@ find_libkrun_shared_object() {
   local candidate
 
   for candidate in \
-    "${libkrun_root}/lib/libkrun.so.1.17.4" \
+    "${libkrun_root}/lib/libkrun.so.1.18.1" \
     "${libkrun_root}/lib/libkrun.so.1" \
     "${libkrun_root}/lib/libkrun.so"; do
     if [[ -e "${candidate}" ]]; then

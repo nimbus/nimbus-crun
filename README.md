@@ -19,7 +19,7 @@ patched libkrun lane is not present.
 
 **Pinned versions:**
 - crun: 1.27.1
-- nimbus-libkrun: v1.17.4-nimbus.1
+- nimbus-libkrun: v1.18.1-nimbus.1
 - libkrunfw bundled by nimbus-libkrun: 5.3.0
 - Built with `--with-libkrun` against the Nimbus-private libkrun archive
 
@@ -52,7 +52,7 @@ git clone --branch 1.27.1 --recurse-submodules \
 
 # Download and extract the paired libkrun archive
 curl -fsSL -o /tmp/nimbus-libkrun-linux-amd64.tar.gz \
-  https://github.com/nimbus/nimbus-libkrun/releases/download/v1.17.4-nimbus.1/nimbus-libkrun-linux-amd64.tar.gz
+  https://github.com/nimbus/nimbus-libkrun/releases/download/v1.18.1-nimbus.1/nimbus-libkrun-linux-amd64.tar.gz
 mkdir -p /tmp/nimbus-libkrun
 tar -xzf /tmp/nimbus-libkrun-linux-amd64.tar.gz -C /tmp/nimbus-libkrun
 

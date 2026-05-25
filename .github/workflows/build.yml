@@ -32,7 +32,7 @@ env:
   CRUN_VERSION: "1.27.1"
   FEDORA_IMAGE: "fedora:44"
   NIMBUS_LIBKRUN_REPO: "nimbus/nimbus-libkrun"
-  NIMBUS_LIBKRUN_VERSION: "v1.17.4-nimbus.1"
+  NIMBUS_LIBKRUN_VERSION: "v1.18.1-nimbus.1"
   NIMBUS_CRUN_RUNPATH: "$ORIGIN/lib"
 
 jobs:
@@ -232,7 +232,7 @@ jobs:
           Patched crun binary with libkrun TSI port mapping support.
 
           **Build:** crun 1.27.1 + `0001-krun-add-tsi-port-mapping-via-oci-annotation.patch`,
-          linked against `nimbus/nimbus-libkrun` v1.17.4-nimbus.1.
+          linked against `nimbus/nimbus-libkrun` v1.18.1-nimbus.1.
 
           The binary includes `+LIBKRUN` support and reads the `krun.port_map` OCI
           annotation to configure TSI port forwarding via `krun_set_port_map()`

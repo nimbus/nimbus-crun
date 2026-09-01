@@ -25,7 +25,7 @@
  #define PASST_FD_PARENT 0
  #define PASST_FD_CHILD 1
  
-@@ -248,9 +256,291 @@
+@@ -248,9 +256,302 @@
      }
  
    return val;
@@ -71,6 +71,7 @@
 +{
 +  char address[INET6_ADDRSTRLEN];
 +  struct in_addr ipv4;
++  struct in_addr mapped_ipv4;
 +  struct in6_addr ipv6;
 +
 +  if (len == 0)
@@ -101,11 +102,21 @@
 +      if (inet_pton (AF_INET6, address, &ipv6) != 1)
 +        return crun_make_error (err, 0, "krun.port_map bind address is not a valid IPv6 address");
 +
-+      if (IN6_IS_ADDR_MULTICAST (&ipv6) || IN6_IS_ADDR_LINKLOCAL (&ipv6))
-+        return crun_make_error (err, 0, "krun.port_map bind address requires an unsupported IPv6 scope");
++      if (IN6_IS_ADDR_V4MAPPED (&ipv6))
++        {
++          memcpy (&mapped_ipv4.s_addr, &ipv6.s6_addr[12], sizeof (mapped_ipv4.s_addr));
++          if (IN_MULTICAST (ntohl (mapped_ipv4.s_addr)))
++            return crun_make_error (err, 0, "krun.port_map bind address cannot be multicast");
++          parsed->bind_address_unspecified = mapped_ipv4.s_addr == htonl (INADDR_ANY);
++        }
++      else
++        {
++          if (IN6_IS_ADDR_MULTICAST (&ipv6) || IN6_IS_ADDR_LINKLOCAL (&ipv6))
++            return crun_make_error (err, 0, "krun.port_map bind address requires an unsupported IPv6 scope");
++          parsed->bind_address_unspecified = IN6_IS_ADDR_UNSPECIFIED (&ipv6);
++        }
 +
 +      parsed->canonical_bind_address = ipv6;
-+      parsed->bind_address_unspecified = IN6_IS_ADDR_UNSPECIFIED (&ipv6);
 +    }
 +  else
 +    return crun_make_error (err, 0, "krun.port_map bind address family is unsupported");
@@ -317,7 +328,7 @@
  libkrun_configure_vm (uint32_t ctx_id, void *handle, struct krun_config *kconf, libcrun_container_t *container, libcrun_error_t *err)
  {
    runtime_spec_schema_config_schema *def = container->container_def;
-@@ -552,6 +842,15 @@
+@@ -552,6 +853,15 @@
        libcrun_error_t *tmp_err = &err;
        libcrun_error_write_warning_and_release (NULL, &tmp_err);
        error (EXIT_FAILURE, errcode, "could not configure krun vm");

@@ -84,6 +84,7 @@ libkrun_parse_port_map_address (const char *value, size_t len, int family, struc
 {
   char address[INET6_ADDRSTRLEN];
   struct in_addr ipv4;
+  struct in_addr mapped_ipv4;
   struct in6_addr ipv6;
 
   if (len == 0)
@@ -114,11 +115,21 @@ libkrun_parse_port_map_address (const char *value, size_t len, int family, struc
       if (inet_pton (AF_INET6, address, &ipv6) != 1)
         return crun_make_error (err, 0, "krun.port_map bind address is not a valid IPv6 address");
 
-      if (IN6_IS_ADDR_MULTICAST (&ipv6) || IN6_IS_ADDR_LINKLOCAL (&ipv6))
-        return crun_make_error (err, 0, "krun.port_map bind address requires an unsupported IPv6 scope");
+      if (IN6_IS_ADDR_V4MAPPED (&ipv6))
+        {
+          memcpy (&mapped_ipv4.s_addr, &ipv6.s6_addr[12], sizeof (mapped_ipv4.s_addr));
+          if (IN_MULTICAST (ntohl (mapped_ipv4.s_addr)))
+            return crun_make_error (err, 0, "krun.port_map bind address cannot be multicast");
+          parsed->bind_address_unspecified = mapped_ipv4.s_addr == htonl (INADDR_ANY);
+        }
+      else
+        {
+          if (IN6_IS_ADDR_MULTICAST (&ipv6) || IN6_IS_ADDR_LINKLOCAL (&ipv6))
+            return crun_make_error (err, 0, "krun.port_map bind address requires an unsupported IPv6 scope");
+          parsed->bind_address_unspecified = IN6_IS_ADDR_UNSPECIFIED (&ipv6);
+        }
 
       parsed->canonical_bind_address = ipv6;
-      parsed->bind_address_unspecified = IN6_IS_ADDR_UNSPECIFIED (&ipv6);
     }
   else
     return crun_make_error (err, 0, "krun.port_map bind address family is unsupported");
@@ -332,12 +343,14 @@ main (void)
   expect_invalid ("0:8080", "must be greater than zero");
   expect_invalid ("18080:0", "must be greater than zero");
   expect_invalid ("224.0.0.1:18080:8080", "cannot be multicast");
+  expect_invalid ("[::ffff:224.0.0.1]:18080:8080", "cannot be multicast");
   expect_invalid ("[ff02::1]:18080:8080", "unsupported IPv6 scope");
   expect_invalid ("[fe80::1]:18080:8080", "unsupported IPv6 scope");
   expect_invalid ("127.0.0.1:18080:8080,127.0.0.1:18080:9090", "conflicting host endpoint");
   expect_invalid ("18080:8080,127.0.0.1:18080:9090", "conflicting host endpoint");
   expect_invalid ("0.0.0.0:18080:8080,127.0.0.1:18080:9090", "conflicting host endpoint");
   expect_invalid ("[::]:18080:8080,[::1]:18080:9090", "conflicting host endpoint");
+  expect_invalid ("[::ffff:0.0.0.0]:18080:8080,127.0.0.1:18080:9090", "conflicting host endpoint");
   expect_invalid ("127.0.0.1:18080:8080,[::ffff:127.0.0.1]:18080:9090", "conflicting host endpoint");
   expect_invalid ("127.0.0.1:18080:8080,127.0.0.1:18081:8080", "duplicate guest port");
 

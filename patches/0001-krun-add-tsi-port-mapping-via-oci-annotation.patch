@@ -25,7 +25,7 @@
  #define PASST_FD_PARENT 0
  #define PASST_FD_CHILD 1
  
-@@ -248,9 +256,302 @@
+@@ -248,9 +256,316 @@
      }
  
    return val;
@@ -61,6 +61,7 @@
 +{
 +  bool has_bind_address;
 +  bool bind_address_unspecified;
++  int bind_address_family;
 +  struct in6_addr canonical_bind_address;
 +  uint16_t host_port;
 +  uint16_t guest_port;
@@ -96,6 +97,7 @@
 +      parsed->canonical_bind_address.s6_addr[11] = 0xff;
 +      memcpy (&parsed->canonical_bind_address.s6_addr[12], &ipv4.s_addr, sizeof (ipv4.s_addr));
 +      parsed->bind_address_unspecified = ipv4.s_addr == htonl (INADDR_ANY);
++      parsed->bind_address_family = AF_INET;
 +    }
 +  else if (family == AF_INET6)
 +    {
@@ -108,12 +110,14 @@
 +          if (IN_MULTICAST (ntohl (mapped_ipv4.s_addr)))
 +            return crun_make_error (err, 0, "krun.port_map bind address cannot be multicast");
 +          parsed->bind_address_unspecified = mapped_ipv4.s_addr == htonl (INADDR_ANY);
++          parsed->bind_address_family = AF_INET;
 +        }
 +      else
 +        {
 +          if (IN6_IS_ADDR_MULTICAST (&ipv6) || IN6_IS_ADDR_LINKLOCAL (&ipv6))
 +            return crun_make_error (err, 0, "krun.port_map bind address requires an unsupported IPv6 scope");
 +          parsed->bind_address_unspecified = IN6_IS_ADDR_UNSPECIFIED (&ipv6);
++          parsed->bind_address_family = AF_INET6;
 +        }
 +
 +      parsed->canonical_bind_address = ipv6;
@@ -188,6 +192,15 @@
 +  return libkrun_parse_port_map_port (second_separator + 1, len - (second_separator - entry) - 1, &parsed->guest_port, err);
 +}
 +
++static bool
++libkrun_unspecified_bind_address_conflicts (const struct libkrun_port_map_entry *entry, const struct libkrun_port_map_entry *other)
++{
++  if (!entry->bind_address_unspecified)
++    return false;
++
++  return entry->bind_address_family == AF_INET6 || other->bind_address_family == AF_INET;
++}
++
 +static int
 +libkrun_reject_duplicate_port_map_entry (const struct libkrun_port_map_entry *entries, size_t entries_len, const struct libkrun_port_map_entry *candidate, libcrun_error_t *err)
 +{
@@ -200,7 +213,8 @@
 +
 +      if (entries[i].host_port == candidate->host_port
 +          && (!entries[i].has_bind_address || !candidate->has_bind_address
-+              || entries[i].bind_address_unspecified || candidate->bind_address_unspecified
++              || libkrun_unspecified_bind_address_conflicts (&entries[i], candidate)
++              || libkrun_unspecified_bind_address_conflicts (candidate, &entries[i])
 +              || memcmp (&entries[i].canonical_bind_address, &candidate->canonical_bind_address,
 +                         sizeof (candidate->canonical_bind_address)) == 0))
 +        return crun_make_error (err, 0, "krun.port_map contains a conflicting host endpoint");
@@ -328,7 +342,7 @@
  libkrun_configure_vm (uint32_t ctx_id, void *handle, struct krun_config *kconf, libcrun_container_t *container, libcrun_error_t *err)
  {
    runtime_spec_schema_config_schema *def = container->container_def;
-@@ -552,6 +853,15 @@
+@@ -552,6 +867,15 @@
        libcrun_error_t *tmp_err = &err;
        libcrun_error_write_warning_and_release (NULL, &tmp_err);
        error (EXIT_FAILURE, errcode, "could not configure krun vm");

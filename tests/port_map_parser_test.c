@@ -74,6 +74,7 @@ struct libkrun_port_map_entry
 {
   bool has_bind_address;
   bool bind_address_unspecified;
+  int bind_address_family;
   struct in6_addr canonical_bind_address;
   uint16_t host_port;
   uint16_t guest_port;
@@ -109,6 +110,7 @@ libkrun_parse_port_map_address (const char *value, size_t len, int family, struc
       parsed->canonical_bind_address.s6_addr[11] = 0xff;
       memcpy (&parsed->canonical_bind_address.s6_addr[12], &ipv4.s_addr, sizeof (ipv4.s_addr));
       parsed->bind_address_unspecified = ipv4.s_addr == htonl (INADDR_ANY);
+      parsed->bind_address_family = AF_INET;
     }
   else if (family == AF_INET6)
     {
@@ -121,12 +123,14 @@ libkrun_parse_port_map_address (const char *value, size_t len, int family, struc
           if (IN_MULTICAST (ntohl (mapped_ipv4.s_addr)))
             return crun_make_error (err, 0, "krun.port_map bind address cannot be multicast");
           parsed->bind_address_unspecified = mapped_ipv4.s_addr == htonl (INADDR_ANY);
+          parsed->bind_address_family = AF_INET;
         }
       else
         {
           if (IN6_IS_ADDR_MULTICAST (&ipv6) || IN6_IS_ADDR_LINKLOCAL (&ipv6))
             return crun_make_error (err, 0, "krun.port_map bind address requires an unsupported IPv6 scope");
           parsed->bind_address_unspecified = IN6_IS_ADDR_UNSPECIFIED (&ipv6);
+          parsed->bind_address_family = AF_INET6;
         }
 
       parsed->canonical_bind_address = ipv6;
@@ -136,6 +140,15 @@ libkrun_parse_port_map_address (const char *value, size_t len, int family, struc
 
   parsed->has_bind_address = true;
   return 0;
+}
+
+static bool
+libkrun_unspecified_bind_address_conflicts (const struct libkrun_port_map_entry *entry, const struct libkrun_port_map_entry *other)
+{
+  if (!entry->bind_address_unspecified)
+    return false;
+
+  return entry->bind_address_family == AF_INET6 || other->bind_address_family == AF_INET;
 }
 
 static int
@@ -213,7 +226,8 @@ libkrun_reject_duplicate_port_map_entry (const struct libkrun_port_map_entry *en
 
       if (entries[i].host_port == candidate->host_port
           && (!entries[i].has_bind_address || !candidate->has_bind_address
-              || entries[i].bind_address_unspecified || candidate->bind_address_unspecified
+              || libkrun_unspecified_bind_address_conflicts (&entries[i], candidate)
+              || libkrun_unspecified_bind_address_conflicts (candidate, &entries[i])
               || memcmp (&entries[i].canonical_bind_address, &candidate->canonical_bind_address,
                          sizeof (candidate->canonical_bind_address)) == 0))
         return crun_make_error (err, 0, "krun.port_map contains a conflicting host endpoint");
@@ -332,6 +346,8 @@ main (void)
   expect_valid ("[::1]:18080:8080", 1, true);
   expect_valid ("127.0.0.1:18080:8080,[::1]:18443:8443", 2, true);
   expect_valid ("127.0.0.1:18080:8080,127.0.0.2:18080:8081,[::1]:18080:8082", 3, true);
+  expect_valid ("0.0.0.0:18080:8080,[::1]:18080:8081", 2, true);
+  expect_valid ("[::1]:18080:8080,0.0.0.0:18080:8081", 2, true);
 
   expect_invalid ("", "annotation cannot be empty");
   expect_invalid (",18080:8080", "entry cannot be empty");
@@ -350,6 +366,7 @@ main (void)
   expect_invalid ("18080:8080,127.0.0.1:18080:9090", "conflicting host endpoint");
   expect_invalid ("0.0.0.0:18080:8080,127.0.0.1:18080:9090", "conflicting host endpoint");
   expect_invalid ("[::]:18080:8080,[::1]:18080:9090", "conflicting host endpoint");
+  expect_invalid ("[::]:18080:8080,127.0.0.1:18080:9090", "conflicting host endpoint");
   expect_invalid ("[::ffff:0.0.0.0]:18080:8080,127.0.0.1:18080:9090", "conflicting host endpoint");
   expect_invalid ("127.0.0.1:18080:8080,[::ffff:127.0.0.1]:18080:9090", "conflicting host endpoint");
   expect_invalid ("127.0.0.1:18080:8080,127.0.0.1:18081:8080", "duplicate guest port");

@@ -18,9 +18,10 @@ service bindings from silently widening to all host interfaces when the
 patched libkrun lane is not present.
 
 **Pinned versions:**
-- crun: 1.27.1
-- nimbus-libkrun: v1.18.1-nimbus.1
-- libkrunfw bundled by nimbus-libkrun: 5.3.0
+- crun: 1.29.1
+- nimbus-libkrun: v1.19.4-nimbus.1
+- libkrunfw bundled by nimbus-libkrun: 5.5.0
+- Embedded artifact version: 1.29.1-nimbus.1
 - Built with `--with-libkrun` against the Nimbus-private libkrun archive
 
 ## Published artifacts
@@ -47,12 +48,12 @@ Requires a Linux host, a crun source checkout, and an extracted
 
 ```bash
 # Clone crun at the pinned version
-git clone --branch 1.27.1 --recurse-submodules \
+git clone --branch 1.29.1 --recurse-submodules \
   https://github.com/containers/crun.git /tmp/crun-src
 
 # Download and extract the paired libkrun archive
 curl -fsSL -o /tmp/nimbus-libkrun-linux-amd64.tar.gz \
-  https://github.com/nimbus/nimbus-libkrun/releases/download/v1.18.1-nimbus.1/nimbus-libkrun-linux-amd64.tar.gz
+  https://github.com/nimbus/nimbus-libkrun/releases/download/v1.19.4-nimbus.1/nimbus-libkrun-linux-amd64.tar.gz
 mkdir -p /tmp/nimbus-libkrun
 tar -xzf /tmp/nimbus-libkrun-linux-amd64.tar.gz -C /tmp/nimbus-libkrun
 
@@ -63,6 +64,7 @@ bash scripts/verify-patch.sh /tmp/crun-src
 bash scripts/build.sh \
   --source /tmp/crun-src \
   --libkrun-root /tmp/nimbus-libkrun \
+  --release-version 1.29.1-nimbus.1 \
   --output /tmp/nimbus-crun
 
 # Verify
@@ -82,13 +84,16 @@ bash scripts/verify-fedora-userspace.sh \
 The GitHub Actions workflow (`.github/workflows/build.yml`) runs:
 
 1. **verify** — patch syntax, parser malformed-input coverage, help
-   entrypoints, patch applies to crun 1.27.1
+   entrypoints, patch applies to crun 1.29.1
 2. **build** (matrix: amd64 + arm64) — builds inside a checked-in Fedora
    builder image definition and reuses warm BuildKit `gha` cache layers so the
    dependency install step is not re-run on every workflow. Each build downloads
    the paired `nimbus-libkrun` release archive, verifies its checksum, links
-   against that private root, and checks the resulting RUNPATH.
-3. **publish** — GitHub Release with checksums and attestation on `v*` tags
+   against that private root, and checks the resulting RUNPATH. The binary
+   embeds the Nimbus release version, exact upstream commit, and patch-set
+   digest.
+3. **publish** — GitHub Release with checksums and attestation on the matching
+   `v1.29.1-nimbus.*` tag
 
 The builder image definition lives at `.github/container/Dockerfile.builder`.
 

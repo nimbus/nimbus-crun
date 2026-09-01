@@ -12,7 +12,7 @@ on:
     branches:
       - main
     tags:
-      - "v*"
+      - "v1.29.1-nimbus.*"
     paths:
       - "patches/**"
       - "scripts/**"
@@ -29,10 +29,14 @@ permissions:
   contents: read
 
 env:
-  CRUN_VERSION: "1.27.1"
+  CRUN_VERSION: "1.29.1"
+  CRUN_SOURCE_COMMIT: "f0d911de5587342cfeb16473bf32ecdfeaf25957"
   FEDORA_IMAGE: "fedora:44"
+  NIMBUS_CRUN_VERSION: "1.29.1-nimbus.1"
   NIMBUS_LIBKRUN_REPO: "nimbus/nimbus-libkrun"
-  NIMBUS_LIBKRUN_VERSION: "v1.18.1-nimbus.1"
+  NIMBUS_LIBKRUN_VERSION: "v1.19.4-nimbus.1"
+  NIMBUS_LIBKRUN_AMD64_SHA256: "752907cc3d41a23e9c70e57e47e5cf8c2421c1c735cda99c75752d1142099101"
+  NIMBUS_LIBKRUN_ARM64_SHA256: "543be429cf4d57f978a3da9d74f53789653e4df6d2dbe42f6178e27abfb73589"
   NIMBUS_CRUN_RUNPATH: "$ORIGIN/lib"
 
 jobs:
@@ -53,6 +57,14 @@ jobs:
           bash -n scripts/verify-fedora-userspace.sh
           bash scripts/build.sh --help
           bash scripts/verify-fedora-userspace.sh --help
+
+      - name: Verify release tag matches the embedded version
+        if: github.ref_type == 'tag'
+        run: |
+          if [[ "${GITHUB_REF_NAME}" != "v${NIMBUS_CRUN_VERSION}" ]]; then
+            echo "release tag ${GITHUB_REF_NAME} does not match v${NIMBUS_CRUN_VERSION}" >&2
+            exit 1
+          fi
 
       - name: Download pinned crun source
         run: |
@@ -107,6 +119,12 @@ jobs:
           git clone --depth 1 --branch "${CRUN_VERSION}" --recurse-submodules \
             https://github.com/containers/crun.git "${CRUN_SOURCE_DIR}"
 
+          actual_commit="$(git -C "${CRUN_SOURCE_DIR}" rev-parse HEAD)"
+          if [[ "${actual_commit}" != "${CRUN_SOURCE_COMMIT}" ]]; then
+            echo "crun ${CRUN_VERSION} resolved to ${actual_commit}, expected ${CRUN_SOURCE_COMMIT}" >&2
+            exit 1
+          fi
+
       - name: Download paired nimbus-libkrun release
         run: |
           release_url="https://github.com/${NIMBUS_LIBKRUN_REPO}/releases/download/${NIMBUS_LIBKRUN_VERSION}"
@@ -118,7 +136,14 @@ jobs:
             "${release_url}/${archive_name}"
 
           cd "${LIBKRUN_ARCHIVE_DIR}"
-          sha256sum --ignore-missing -c checksums.txt
+          case "${{ matrix.arch }}" in
+            amd64) expected_sha256="${NIMBUS_LIBKRUN_AMD64_SHA256}" ;;
+            arm64) expected_sha256="${NIMBUS_LIBKRUN_ARM64_SHA256}" ;;
+            *) echo "unsupported architecture: ${{ matrix.arch }}" >&2; exit 1 ;;
+          esac
+
+          printf '%s  %s\n' "${expected_sha256}" "${archive_name}" | sha256sum -c -
+          grep -Fqx "${expected_sha256}  ${archive_name}" checksums.txt
           tar -xzf "${archive_name}" -C "${LIBKRUN_ROOT}"
 
       - name: Build cached builder image
@@ -143,6 +168,7 @@ jobs:
             -v "${BUILD_OUTPUT_DIR}:/work/output" \
             -v "${BUILD_WORK_DIR}:/work/build" \
             -e NIMBUS_CRUN_RUNPATH="${NIMBUS_CRUN_RUNPATH}" \
+            -e NIMBUS_CRUN_VERSION="${NIMBUS_CRUN_VERSION}" \
             --workdir /work/repo \
             "nimbus-crun-builder:${{ matrix.arch }}" \
             bash -lc '
@@ -152,6 +178,7 @@ jobs:
               bash scripts/build.sh \
                 --source /work/crun-src \
                 --libkrun-root /work/libkrun \
+                --release-version "${NIMBUS_CRUN_VERSION}" \
                 --output /work/output/crun \
                 --build-dir /work/build \
                 --runpath "${NIMBUS_CRUN_RUNPATH}"
@@ -231,8 +258,8 @@ jobs:
             --notes "$(cat <<'NOTES'
           Patched crun binary with libkrun TSI port mapping support.
 
-          **Build:** crun 1.27.1 + `0001-krun-add-tsi-port-mapping-via-oci-annotation.patch`,
-          linked against `nimbus/nimbus-libkrun` v1.18.1-nimbus.1.
+          **Build:** crun 1.29.1 + `0001-krun-add-tsi-port-mapping-via-oci-annotation.patch`,
+          linked against `nimbus/nimbus-libkrun` v1.19.4-nimbus.1.
 
           The binary includes `+LIBKRUN` support and reads the `krun.port_map` OCI
           annotation to configure TSI port forwarding via `krun_set_port_map()`

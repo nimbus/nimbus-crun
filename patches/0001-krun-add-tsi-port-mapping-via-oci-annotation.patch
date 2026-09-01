@@ -14,7 +14,7 @@
  #include <sys/param.h>
  #include <sys/types.h>
  #include <sys/sysmacros.h>
-@@ -69,6 +73,10 @@
+@@ -77,6 +81,10 @@
  #define KRUN_FLAVOR_AWS_NITRO "aws-nitro"
  #define KRUN_FLAVOR_SEV "sev"
  
@@ -25,7 +25,7 @@
  #define PASST_FD_PARENT 0
  #define PASST_FD_CHILD 1
  
-@@ -242,9 +250,269 @@
+@@ -248,9 +256,291 @@
      }
  
    return val;
@@ -60,7 +60,8 @@
 +struct libkrun_port_map_entry
 +{
 +  bool has_bind_address;
-+  char bind_address[INET6_ADDRSTRLEN];
++  bool bind_address_unspecified;
++  struct in6_addr canonical_bind_address;
 +  uint16_t host_port;
 +  uint16_t guest_port;
 +};
@@ -85,17 +86,31 @@
 +    {
 +      if (inet_pton (AF_INET, address, &ipv4) != 1)
 +        return crun_make_error (err, 0, "krun.port_map bind address is not a valid IPv4 address");
++
++      if (IN_MULTICAST (ntohl (ipv4.s_addr)))
++        return crun_make_error (err, 0, "krun.port_map bind address cannot be multicast");
++
++      memset (&parsed->canonical_bind_address, 0, sizeof (parsed->canonical_bind_address));
++      parsed->canonical_bind_address.s6_addr[10] = 0xff;
++      parsed->canonical_bind_address.s6_addr[11] = 0xff;
++      memcpy (&parsed->canonical_bind_address.s6_addr[12], &ipv4.s_addr, sizeof (ipv4.s_addr));
++      parsed->bind_address_unspecified = ipv4.s_addr == htonl (INADDR_ANY);
 +    }
 +  else if (family == AF_INET6)
 +    {
 +      if (inet_pton (AF_INET6, address, &ipv6) != 1)
 +        return crun_make_error (err, 0, "krun.port_map bind address is not a valid IPv6 address");
++
++      if (IN6_IS_ADDR_MULTICAST (&ipv6) || IN6_IS_ADDR_LINKLOCAL (&ipv6))
++        return crun_make_error (err, 0, "krun.port_map bind address requires an unsupported IPv6 scope");
++
++      parsed->canonical_bind_address = ipv6;
++      parsed->bind_address_unspecified = IN6_IS_ADDR_UNSPECIFIED (&ipv6);
 +    }
 +  else
 +    return crun_make_error (err, 0, "krun.port_map bind address family is unsupported");
 +
 +  parsed->has_bind_address = true;
-+  memcpy (parsed->bind_address, address, len + 1);
 +  return 0;
  }
  
@@ -168,10 +183,17 @@
 +  size_t i;
 +
 +  for (i = 0; i < entries_len; i++)
-+    if (entries[i].host_port == candidate->host_port
-+        && entries[i].has_bind_address == candidate->has_bind_address
-+        && strcmp (entries[i].bind_address, candidate->bind_address) == 0)
-+      return crun_make_error (err, 0, "krun.port_map contains a duplicate host bind address and port");
++    {
++      if (entries[i].guest_port == candidate->guest_port)
++        return crun_make_error (err, 0, "krun.port_map contains a duplicate guest port");
++
++      if (entries[i].host_port == candidate->host_port
++          && (!entries[i].has_bind_address || !candidate->has_bind_address
++              || entries[i].bind_address_unspecified || candidate->bind_address_unspecified
++              || memcmp (&entries[i].canonical_bind_address, &candidate->canonical_bind_address,
++                         sizeof (candidate->canonical_bind_address)) == 0))
++        return crun_make_error (err, 0, "krun.port_map contains a conflicting host endpoint");
++    }
 +
 +  return 0;
 +}
@@ -295,7 +317,7 @@
  libkrun_configure_vm (uint32_t ctx_id, void *handle, struct krun_config *kconf, libcrun_container_t *container, libcrun_error_t *err)
  {
    runtime_spec_schema_config_schema *def = container->container_def;
-@@ -506,6 +774,15 @@
+@@ -552,6 +842,15 @@
        libcrun_error_t *tmp_err = &err;
        libcrun_error_write_warning_and_release (NULL, &tmp_err);
        error (EXIT_FAILURE, errcode, "could not configure krun vm");
@@ -310,4 +332,4 @@
 +      error (EXIT_FAILURE, errcode, "could not configure krun port map");
      }
  
-   yajl_tree_free (kconf->config_tree);
+   json_object_put (kconf->config_doc);

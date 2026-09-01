@@ -10,6 +10,7 @@ RUN dnf install -y \
       findutils \
       gcc \
       git \
+      json-c-devel \
       libcap-devel \
       libseccomp-devel \
       libtool \
@@ -19,6 +20,5 @@ RUN dnf install -y \
       pkgconf-pkg-config \
       python3 \
       systemd-devel \
-      yajl-devel \
   && dnf clean all \
   && rm -rf /var/cache/dnf

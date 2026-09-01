@@ -73,6 +73,7 @@ output_dir=""
 work_dir=""
 cleanup_output_dir=0
 cleanup_work_dir=0
+# shellcheck disable=SC2016 # The loader, not this shell, expands $ORIGIN.
 runpath='$ORIGIN/lib'
 
 while [[ $# -gt 0 ]]; do
@@ -168,6 +169,7 @@ docker run --rm \
   -v "${output_dir}:${container_output_dir}" \
   -v "${work_dir}:${container_work_dir}" \
   -e NIMBUS_CRUN_RUNPATH="${runpath}" \
+  -e NIMBUS_CRUN_VERSION="1.29.1-nimbus.1" \
   --workdir /work/repo \
   "${image_ref}" \
   bash -lc '
@@ -181,20 +183,22 @@ docker run --rm \
       findutils \
       gcc \
       git \
+      json-c-devel \
       libcap-devel \
       libseccomp-devel \
       libtool \
+      make \
       patchelf \
       patch \
       pkgconf-pkg-config \
       python3 \
       systemd-devel \
-      which \
-      yajl-devel
+      which
     bash scripts/verify-patch.sh /work/crun-src
     bash scripts/build.sh \
       --source /work/crun-src \
       --libkrun-root /work/libkrun \
+      --release-version "${NIMBUS_CRUN_VERSION}" \
       --output /work/output/crun \
       --build-dir /work/build \
       --runpath "${NIMBUS_CRUN_RUNPATH}"

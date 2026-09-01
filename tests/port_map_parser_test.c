@@ -73,7 +73,8 @@ libkrun_parse_port_map_port (const char *value, size_t len, uint16_t *port, libc
 struct libkrun_port_map_entry
 {
   bool has_bind_address;
-  char bind_address[INET6_ADDRSTRLEN];
+  bool bind_address_unspecified;
+  struct in6_addr canonical_bind_address;
   uint16_t host_port;
   uint16_t guest_port;
 };
@@ -98,17 +99,31 @@ libkrun_parse_port_map_address (const char *value, size_t len, int family, struc
     {
       if (inet_pton (AF_INET, address, &ipv4) != 1)
         return crun_make_error (err, 0, "krun.port_map bind address is not a valid IPv4 address");
+
+      if (IN_MULTICAST (ntohl (ipv4.s_addr)))
+        return crun_make_error (err, 0, "krun.port_map bind address cannot be multicast");
+
+      memset (&parsed->canonical_bind_address, 0, sizeof (parsed->canonical_bind_address));
+      parsed->canonical_bind_address.s6_addr[10] = 0xff;
+      parsed->canonical_bind_address.s6_addr[11] = 0xff;
+      memcpy (&parsed->canonical_bind_address.s6_addr[12], &ipv4.s_addr, sizeof (ipv4.s_addr));
+      parsed->bind_address_unspecified = ipv4.s_addr == htonl (INADDR_ANY);
     }
   else if (family == AF_INET6)
     {
       if (inet_pton (AF_INET6, address, &ipv6) != 1)
         return crun_make_error (err, 0, "krun.port_map bind address is not a valid IPv6 address");
+
+      if (IN6_IS_ADDR_MULTICAST (&ipv6) || IN6_IS_ADDR_LINKLOCAL (&ipv6))
+        return crun_make_error (err, 0, "krun.port_map bind address requires an unsupported IPv6 scope");
+
+      parsed->canonical_bind_address = ipv6;
+      parsed->bind_address_unspecified = IN6_IS_ADDR_UNSPECIFIED (&ipv6);
     }
   else
     return crun_make_error (err, 0, "krun.port_map bind address family is unsupported");
 
   parsed->has_bind_address = true;
-  memcpy (parsed->bind_address, address, len + 1);
   return 0;
 }
 
@@ -181,10 +196,17 @@ libkrun_reject_duplicate_port_map_entry (const struct libkrun_port_map_entry *en
   size_t i;
 
   for (i = 0; i < entries_len; i++)
-    if (entries[i].host_port == candidate->host_port
-        && entries[i].has_bind_address == candidate->has_bind_address
-        && strcmp (entries[i].bind_address, candidate->bind_address) == 0)
-      return crun_make_error (err, 0, "krun.port_map contains a duplicate host bind address and port");
+    {
+      if (entries[i].guest_port == candidate->guest_port)
+        return crun_make_error (err, 0, "krun.port_map contains a duplicate guest port");
+
+      if (entries[i].host_port == candidate->host_port
+          && (!entries[i].has_bind_address || !candidate->has_bind_address
+              || entries[i].bind_address_unspecified || candidate->bind_address_unspecified
+              || memcmp (&entries[i].canonical_bind_address, &candidate->canonical_bind_address,
+                         sizeof (candidate->canonical_bind_address)) == 0))
+        return crun_make_error (err, 0, "krun.port_map contains a conflicting host endpoint");
+    }
 
   return 0;
 }
@@ -298,6 +320,7 @@ main (void)
   expect_valid ("127.0.0.1:18080:8080", 1, true);
   expect_valid ("[::1]:18080:8080", 1, true);
   expect_valid ("127.0.0.1:18080:8080,[::1]:18443:8443", 2, true);
+  expect_valid ("127.0.0.1:18080:8080,127.0.0.2:18080:8081,[::1]:18080:8082", 3, true);
 
   expect_invalid ("", "annotation cannot be empty");
   expect_invalid (",18080:8080", "entry cannot be empty");
@@ -308,8 +331,15 @@ main (void)
   expect_invalid ("999999:8080", "outside the valid u16 range");
   expect_invalid ("0:8080", "must be greater than zero");
   expect_invalid ("18080:0", "must be greater than zero");
-  expect_invalid ("127.0.0.1:18080:8080,127.0.0.1:18080:9090", "duplicate");
-  expect_invalid ("18080:8080,18080:9090", "duplicate");
+  expect_invalid ("224.0.0.1:18080:8080", "cannot be multicast");
+  expect_invalid ("[ff02::1]:18080:8080", "unsupported IPv6 scope");
+  expect_invalid ("[fe80::1]:18080:8080", "unsupported IPv6 scope");
+  expect_invalid ("127.0.0.1:18080:8080,127.0.0.1:18080:9090", "conflicting host endpoint");
+  expect_invalid ("18080:8080,127.0.0.1:18080:9090", "conflicting host endpoint");
+  expect_invalid ("0.0.0.0:18080:8080,127.0.0.1:18080:9090", "conflicting host endpoint");
+  expect_invalid ("[::]:18080:8080,[::1]:18080:9090", "conflicting host endpoint");
+  expect_invalid ("127.0.0.1:18080:8080,[::ffff:127.0.0.1]:18080:9090", "conflicting host endpoint");
+  expect_invalid ("127.0.0.1:18080:8080,127.0.0.1:18081:8080", "duplicate guest port");
 
   memset (long_annotation, '1', sizeof (long_annotation));
   long_annotation[sizeof (long_annotation) - 1] = '\0';

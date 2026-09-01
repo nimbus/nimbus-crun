@@ -169,7 +169,7 @@ docker run --rm \
   -v "${output_dir}:${container_output_dir}" \
   -v "${work_dir}:${container_work_dir}" \
   -e NIMBUS_CRUN_RUNPATH="${runpath}" \
-  -e NIMBUS_CRUN_VERSION="1.29.1-nimbus.1" \
+  -e NIMBUS_CRUN_VERSION="1.29.1-nimbus.2" \
   --workdir /work/repo \
   "${image_ref}" \
   bash -lc '

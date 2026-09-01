@@ -13,13 +13,13 @@ examples:
   bash scripts/build-nimbus-crun.sh \
     --source ~/src/github.com/containers/crun \
     --libkrun-root /tmp/nimbus-libkrun \
-    --release-version 1.29.1-nimbus.1 \
+    --release-version 1.29.1-nimbus.2 \
     --output /tmp/nimbus-crun-stage/crun
 
   bash scripts/build-nimbus-crun.sh \
     --source ~/src/github.com/containers/crun \
     --libkrun-root /tmp/nimbus-libkrun \
-    --release-version 1.29.1-nimbus.1 \
+    --release-version 1.29.1-nimbus.2 \
     --output /tmp/nimbus-crun-stage/crun \
     --install-path /usr/libexec/nimbus/crun \
     --sudo-install
@@ -279,12 +279,12 @@ fi
 
 verify_libkrun_root "${libkrun_root}"
 
-if ! source_commit="$(git -C "${source_dir}" rev-parse --verify 'HEAD^{commit}' 2>/dev/null)"; then
+if ! source_commit="$(git -c safe.directory="${source_dir}" -C "${source_dir}" rev-parse --verify 'HEAD^{commit}' 2>/dev/null)"; then
   echo "upstream crun source is not a Git checkout: ${source_dir}" >&2
   exit 66
 fi
 
-if [[ -n "$(git -C "${source_dir}" status --short --untracked-files=no)" ]]; then
+if [[ -n "$(git -c safe.directory="${source_dir}" -C "${source_dir}" status --short --untracked-files=no)" ]]; then
   echo "upstream crun source has tracked changes: ${source_dir}" >&2
   exit 64
 fi

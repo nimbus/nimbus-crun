@@ -21,7 +21,7 @@ patched libkrun lane is not present.
 - crun: 1.29.1
 - nimbus-libkrun: v1.19.4-nimbus.2
 - libkrunfw bundled by nimbus-libkrun: 5.5.0
-- Embedded artifact version: 1.29.1-nimbus.1
+- Embedded artifact version: 1.29.1-nimbus.2
 - Built with `--with-libkrun` against the Nimbus-private libkrun archive
 
 ## Published artifacts
@@ -64,7 +64,7 @@ bash scripts/verify-patch.sh /tmp/crun-src
 bash scripts/build.sh \
   --source /tmp/crun-src \
   --libkrun-root /tmp/nimbus-libkrun \
-  --release-version 1.29.1-nimbus.1 \
+  --release-version 1.29.1-nimbus.2 \
   --output /tmp/nimbus-crun
 
 # Verify

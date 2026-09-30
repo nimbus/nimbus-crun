@@ -13,13 +13,13 @@ examples:
   bash scripts/build-nimbus-crun.sh \
     --source ~/src/github.com/containers/crun \
     --libkrun-root /tmp/nimbus-libkrun \
-    --release-version 1.29.1-nimbus.2 \
+    --release-version 1.30.1-nimbus.1 \
     --output /tmp/nimbus-crun-stage/crun
 
   bash scripts/build-nimbus-crun.sh \
     --source ~/src/github.com/containers/crun \
     --libkrun-root /tmp/nimbus-libkrun \
-    --release-version 1.29.1-nimbus.2 \
+    --release-version 1.30.1-nimbus.1 \
     --output /tmp/nimbus-crun-stage/crun \
     --install-path /usr/libexec/nimbus/crun \
     --sudo-install

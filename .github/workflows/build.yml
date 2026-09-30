@@ -12,7 +12,7 @@ on:
     branches:
       - main
     tags:
-      - "v1.29.1-nimbus.*"
+      - "v1.30.1-nimbus.*"
     paths:
       - "patches/**"
       - "scripts/**"
@@ -29,10 +29,10 @@ permissions:
   contents: read
 
 env:
-  CRUN_VERSION: "1.29.1"
-  CRUN_SOURCE_COMMIT: "f0d911de5587342cfeb16473bf32ecdfeaf25957"
+  CRUN_VERSION: "1.30.1"
+  CRUN_SOURCE_COMMIT: "079ff6a7a16d029460af882f9ea44674e6a510b6"
   FEDORA_IMAGE: "fedora:44"
-  NIMBUS_CRUN_VERSION: "1.29.1-nimbus.2"
+  NIMBUS_CRUN_VERSION: "1.30.1-nimbus.1"
   NIMBUS_LIBKRUN_REPO: "nimbus/nimbus-libkrun"
   NIMBUS_LIBKRUN_VERSION: "v1.19.4-nimbus.3"
   NIMBUS_LIBKRUN_AMD64_SHA256: "a4a462b284f212731ac548c2f5d4039e38f825101ae59c5eb56ad5b140c473c1"
@@ -258,7 +258,7 @@ jobs:
             --notes "$(cat <<'NOTES'
           Patched crun binary with libkrun TSI port mapping support.
 
-          **Build:** crun 1.29.1 + `0001-krun-add-tsi-port-mapping-via-oci-annotation.patch`,
+          **Build:** crun 1.30.1 + `0001-krun-add-tsi-port-mapping-via-oci-annotation.patch`,
           linked against `nimbus/nimbus-libkrun` v1.19.4-nimbus.3.
 
           The binary includes `+LIBKRUN` support and reads the `krun.port_map` OCI

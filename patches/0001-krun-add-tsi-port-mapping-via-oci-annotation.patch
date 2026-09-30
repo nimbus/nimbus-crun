@@ -14,21 +14,21 @@
  #include <sys/param.h>
  #include <sys/types.h>
  #include <sys/sysmacros.h>
-@@ -77,6 +81,10 @@
+@@ -75,6 +79,10 @@
+ 
  #define KRUN_FLAVOR_AWS_NITRO "aws-nitro"
  #define KRUN_FLAVOR_SEV "sev"
- 
++
 +#define NIMBUS_KRUN_PORT_MAP_BIND_ADDRESS_SYMBOL "krun_set_port_map_with_bind_address"
 +#define NIMBUS_KRUN_PORT_MAP_MAX_ANNOTATION_LEN 8192
 +#define NIMBUS_KRUN_PORT_MAP_MAX_ENTRIES 256
-+
- #define PASST_FD_PARENT 0
- #define PASST_FD_CHILD 1
  
-@@ -248,9 +256,316 @@
-     }
+ #define FD_PAIR_PARENT 0
+ #define FD_PAIR_CHILD 1
+@@ -287,9 +295,316 @@
+     mac[i] = (uint8_t) (hash >> (i * 8));
  
-   return val;
+   mac[0] = (mac[0] & 0xfe) | 0x02;
 +}
 +
 +static int
@@ -127,9 +127,9 @@
 +
 +  parsed->has_bind_address = true;
 +  return 0;
- }
- 
- static int
++}
++
++static int
 +libkrun_parse_port_map_entry (const char *entry, size_t len, struct libkrun_port_map_entry *parsed, libcrun_error_t *err)
 +{
 +  const char *first_separator;
@@ -190,8 +190,8 @@
 +    return ret;
 +
 +  return libkrun_parse_port_map_port (second_separator + 1, len - (second_separator - entry) - 1, &parsed->guest_port, err);
-+}
-+
+ }
+ 
 +static bool
 +libkrun_unspecified_bind_address_conflicts (const struct libkrun_port_map_entry *entry, const struct libkrun_port_map_entry *other)
 +{
@@ -201,7 +201,7 @@
 +  return entry->bind_address_family == AF_INET6 || other->bind_address_family == AF_INET;
 +}
 +
-+static int
+ static int
 +libkrun_reject_duplicate_port_map_entry (const struct libkrun_port_map_entry *entries, size_t entries_len, const struct libkrun_port_map_entry *candidate, libcrun_error_t *err)
 +{
 +  size_t i;
@@ -342,12 +342,10 @@
  libkrun_configure_vm (uint32_t ctx_id, void *handle, struct krun_config *kconf, libcrun_container_t *container, libcrun_error_t *err)
  {
    runtime_spec_schema_config_schema *def = container->container_def;
-@@ -552,6 +867,15 @@
-       libcrun_error_t *tmp_err = &err;
-       libcrun_error_write_warning_and_release (NULL, &tmp_err);
+@@ -608,6 +923,15 @@
        error (EXIT_FAILURE, errcode, "could not configure krun vm");
-+    }
-+
+     }
+ 
 +  ret = libkrun_configure_port_map (ctx_id, handle, container, &err);
 +  if (UNLIKELY (ret))
 +    {
@@ -355,6 +353,8 @@
 +      libcrun_error_t *tmp_err = &err;
 +      libcrun_error_write_warning_and_release (NULL, &tmp_err);
 +      error (EXIT_FAILURE, errcode, "could not configure krun port map");
-     }
- 
++    }
++
    json_object_put (kconf->config_doc);
+ 
+   ret = krun_start_enter (ctx_id);

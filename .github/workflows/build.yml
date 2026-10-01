@@ -32,12 +32,12 @@ env:
   CRUN_VERSION: "1.30.1"
   CRUN_SOURCE_COMMIT: "079ff6a7a16d029460af882f9ea44674e6a510b6"
   FEDORA_IMAGE: "fedora:44"
-  NIMBUS_CRUN_VERSION: "1.30.1-nimbus.1"
+  NIMBUS_CRUN_VERSION: "1.30.1-nimbus.2"
   NIMBUS_LIBKRUN_REPO: "nimbus/nimbus-libkrun"
   NIMBUS_LIBKRUN_VERSION: "v1.19.4-nimbus.3"
   NIMBUS_LIBKRUN_AMD64_SHA256: "a4a462b284f212731ac548c2f5d4039e38f825101ae59c5eb56ad5b140c473c1"
   NIMBUS_LIBKRUN_ARM64_SHA256: "c563401dc9107a902b2dfb71ea5c40d283105c8419b3eda4bfc4783bc49cb58f"
-  NIMBUS_CRUN_RUNPATH: "$ORIGIN/lib"
+  NIMBUS_CRUN_RUNPATH: "/usr/libexec/nimbus/lib"
 
 jobs:
   verify:
@@ -57,6 +57,18 @@ jobs:
           bash -n scripts/verify-fedora-userspace.sh
           bash scripts/build.sh --help
           bash scripts/verify-fedora-userspace.sh --help
+
+      - name: Verify build rejects a relative RUNPATH
+        run: |
+          set +e
+          bash scripts/build.sh --source . --libkrun-root . --release-version 0 \
+            --runpath '$ORIGIN/lib'
+          status=$?
+          set -e
+          if [[ "${status}" -ne 64 ]]; then
+            echo "build.sh accepted a relative RUNPATH (exit ${status})" >&2
+            exit 1
+          fi
 
       - name: Verify release tag matches the embedded version
         if: github.ref_type == 'tag'
@@ -263,14 +275,15 @@ jobs:
 
           The binary includes `+LIBKRUN` support and reads the `krun.port_map` OCI
           annotation to configure TSI port forwarding via `krun_set_port_map()`
-          or `krun_set_port_map_with_bind_address()`. Its RUNPATH is `$ORIGIN/lib`
-          for the `/usr/libexec/nimbus/crun` + `/usr/libexec/nimbus/lib` install
-          layout.
+          or `krun_set_port_map_with_bind_address()`. Its RUNPATH is the absolute
+          `/usr/libexec/nimbus/lib` for the `/usr/libexec/nimbus/crun` +
+          `/usr/libexec/nimbus/lib` install layout. crun re-executes from a memfd,
+          so `$ORIGIN` cannot locate the paired libkrun.
 
           **Verify:**
           ```bash
           sha256sum -c checksums.txt
-          LD_LIBRARY_PATH=/usr/libexec/nimbus/lib /usr/libexec/nimbus/crun --version
+          /usr/libexec/nimbus/crun --version
           ```
           NOTES
           )" \

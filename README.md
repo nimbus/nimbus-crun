@@ -21,7 +21,7 @@ patched libkrun lane is not present.
 - crun: 1.30.1
 - nimbus-libkrun: v1.19.4-nimbus.3
 - libkrunfw bundled by nimbus-libkrun: 5.5.0
-- Embedded artifact version: 1.30.1-nimbus.1
+- Embedded artifact version: 1.30.1-nimbus.2
 - Built with `--with-libkrun` against the Nimbus-private libkrun archive
 
 ## Published artifacts
@@ -35,8 +35,10 @@ patched libkrun lane is not present.
 Installs to `/usr/libexec/nimbus/crun` — does not conflict with or replace
 the system crun.
 
-The binary is paired with the `nimbus-libkrun` package. Its RUNPATH is
-`$ORIGIN/lib`, which resolves `/usr/libexec/nimbus/lib` after installation.
+The binary is paired with the `nimbus-libkrun` package. Its RUNPATH is the
+absolute `/usr/libexec/nimbus/lib`. crun re-executes itself from a memfd before
+`main()`, so `$ORIGIN` would expand to `/` and `dlopen("libkrun.so.1")` would
+fall back to `ld.so.cache`. The build rejects a relative `--runpath`.
 The build fails if the paired libkrun root does not export
 `krun_set_port_map_with_bind_address`. `libkrun` is loaded by crun's krun
 handler with `dlopen`, so it is not expected to appear in `ldd` output.
@@ -64,7 +66,7 @@ bash scripts/verify-patch.sh /tmp/crun-src
 bash scripts/build.sh \
   --source /tmp/crun-src \
   --libkrun-root /tmp/nimbus-libkrun \
-  --release-version 1.30.1-nimbus.1 \
+  --release-version 1.30.1-nimbus.2 \
   --output /tmp/nimbus-crun
 
 # Verify

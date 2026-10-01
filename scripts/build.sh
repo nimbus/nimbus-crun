@@ -13,13 +13,13 @@ examples:
   bash scripts/build-nimbus-crun.sh \
     --source ~/src/github.com/containers/crun \
     --libkrun-root /tmp/nimbus-libkrun \
-    --release-version 1.30.1-nimbus.1 \
+    --release-version 1.30.1-nimbus.2 \
     --output /tmp/nimbus-crun-stage/crun
 
   bash scripts/build-nimbus-crun.sh \
     --source ~/src/github.com/containers/crun \
     --libkrun-root /tmp/nimbus-libkrun \
-    --release-version 1.30.1-nimbus.1 \
+    --release-version 1.30.1-nimbus.2 \
     --output /tmp/nimbus-crun-stage/crun \
     --install-path /usr/libexec/nimbus/crun \
     --sudo-install
@@ -116,7 +116,7 @@ verify_binary_linkage() {
 
   dynamic_entries="$(readelf -d "${binary_path}")"
 
-  if [[ -n "${expected_runpath}" && "${dynamic_entries}" != *"${expected_runpath}"* ]]; then
+  if [[ "${dynamic_entries}" != *"path: [${expected_runpath}]"* ]]; then
     echo "built crun binary is missing expected RUNPATH/RPATH: ${expected_runpath}" >&2
     echo "${dynamic_entries}" >&2
     exit 70
@@ -165,8 +165,7 @@ output_path="${TMPDIR:-/tmp}/nimbus-crun-stage/crun"
 install_path=""
 build_dir=""
 sudo_install=0
-# shellcheck disable=SC2016 # The loader, not this shell, expands $ORIGIN.
-runpath='$ORIGIN/lib'
+runpath='/usr/libexec/nimbus/lib'
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -231,6 +230,16 @@ fi
 
 if [[ ! "${release_version}" =~ ^[0-9A-Za-z][0-9A-Za-z._+-]*$ ]]; then
   echo "invalid release version: ${release_version}" >&2
+  exit 64
+fi
+
+# crun re-executes itself from a sealed memfd copy before main() runs (the
+# CVE-2019-5736 protection in cloned_binary.c). The loader then expands $ORIGIN
+# to "/", so a relative RUNPATH makes dlopen("libkrun.so.1") fall back to
+# ld.so.cache and load whatever libkrun the host has there.
+if [[ "${runpath}" != /* ]]; then
+  echo "--runpath must be an absolute directory, not: ${runpath}" >&2
+  echo "crun re-executes from a memfd, so \$ORIGIN resolves to /" >&2
   exit 64
 fi
 

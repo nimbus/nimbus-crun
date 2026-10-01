@@ -17,7 +17,7 @@ options:
   --image <ref>          Fedora container image to use (default: fedora:44)
   --output-dir <path>    Host directory for the staged crun binary
   --work-dir <path>      Host directory for the disposable build tree
-  --runpath <value>      RUNPATH embedded into crun (default: $ORIGIN/lib)
+  --runpath <value>      RUNPATH embedded into crun (default: /usr/libexec/nimbus/lib)
   -h, --help             Show this help
 
 examples:
@@ -73,8 +73,7 @@ output_dir=""
 work_dir=""
 cleanup_output_dir=0
 cleanup_work_dir=0
-# shellcheck disable=SC2016 # The loader, not this shell, expands $ORIGIN.
-runpath='$ORIGIN/lib'
+runpath='/usr/libexec/nimbus/lib'
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -169,7 +168,7 @@ docker run --rm \
   -v "${output_dir}:${container_output_dir}" \
   -v "${work_dir}:${container_work_dir}" \
   -e NIMBUS_CRUN_RUNPATH="${runpath}" \
-  -e NIMBUS_CRUN_VERSION="1.30.1-nimbus.1" \
+  -e NIMBUS_CRUN_VERSION="1.30.1-nimbus.2" \
   --workdir /work/repo \
   "${image_ref}" \
   bash -lc '
